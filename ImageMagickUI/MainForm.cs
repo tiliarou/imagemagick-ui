@@ -522,7 +522,6 @@ namespace ImageMagickUI
             y += 6;
             BtnRow(sc, "\ud83d\udda8 Appliquer sur le fichier source", ref y, async () =>
             {
-                // Passe par ResolveDestination avant de lancer le traitement
                 var dst = ResolveDestination(txtOutput.Text);
                 if (dst == null) { AppendLog("\u23f9 Opération annulée."); return; }
                 await ApplyScanEffect(
@@ -754,18 +753,24 @@ namespace ImageMagickUI
             b.Click += async (_, _) => await action();
             sc.Controls.Add(b); y += BTN_H + 10;
         }
-        private Button MakeSecBtn(string label) =>
-            new Button { Text = label, Width = 130, Height = 26, BackColor = Color.FromArgb(70, 130, 180), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand };
+        // MakeSecBtn enregistre aussi dans _allButtons pour être désactivé pendant les traitements
+        private Button MakeSecBtn(string label)
+        {
+            var b = new Button { Text = label, Width = 130, Height = 26, BackColor = Color.FromArgb(70, 130, 180), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand };
+            b.FlatAppearance.BorderSize = 0;
+            _allButtons.Add(b);  // <-- fix: inclus dans SetBusy
+            return b;
+        }
         private void BrowseFileBtn(Panel sc, TextBox target, ref int y)
         {
-            var b = MakeSecBtn("\ud83d\udcc2 Parcourir..."); b.FlatAppearance.BorderSize = 0;
+            var b = MakeSecBtn("\ud83d\udcc2 Parcourir...");
             b.Location = new Point(CTL_X, y);
             b.Click += (_, _) => { using var d = new OpenFileDialog { Filter = AllFilesFilter() }; if (d.ShowDialog() == DialogResult.OK) target.Text = d.FileName; };
             sc.Controls.Add(b); y += 32;
         }
         private void BrowseFolderBtn(Panel sc, TextBox target, ref int y)
         {
-            var b = MakeSecBtn("\ud83d\udcc1 Dossier..."); b.FlatAppearance.BorderSize = 0;
+            var b = MakeSecBtn("\ud83d\udcc1 Dossier...");
             b.Location = new Point(CTL_X, y);
             b.Click += (_, _) => { using var d = new FolderBrowserDialog(); if (d.ShowDialog() == DialogResult.OK) target.Text = d.SelectedPath; };
             sc.Controls.Add(b); y += 32;

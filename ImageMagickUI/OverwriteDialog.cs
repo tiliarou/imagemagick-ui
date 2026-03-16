@@ -8,6 +8,7 @@ namespace ImageMagickUI
     /// <summary>
     /// Boîte de dialogue modale demandée quand le fichier de destination existe déjà.
     /// Résultat : Cancel | Overwrite | Rename  (+  ApplyToAll pour les batchs).
+    /// La hauteur est calculée dynamiquement selon la longueur du chemin affiché.
     /// </summary>
     public class OverwriteDialog : Form
     {
@@ -19,15 +20,14 @@ namespace ImageMagickUI
 
         private readonly TextBox _txtName;
 
-        private static readonly Color BG     = Color.FromArgb(245, 245, 248);
-        private static readonly Color FG     = Color.FromArgb( 30,  30,  30);
+        private static readonly Color BG = Color.FromArgb(245, 245, 248);
+        private static readonly Color FG = Color.FromArgb( 30,  30,  30);
 
         public OverwriteDialog(string existingPath)
         {
             FinalPath = existingPath;
 
             Text            = "Fichier existant";
-            Size            = new Size(540, 240);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox     = false;
             MinimizeBox     = false;
@@ -35,42 +35,64 @@ namespace ImageMagickUI
             BackColor       = BG;
             Font            = new Font("Segoe UI", 9f);
 
-            // Message
+            const int PAD   = 12;
+            const int W     = 540;
+            const int BTN_H = 30;
+
+            // --- Label message (hauteur auto selon longueur du chemin) ---
             var lbl = new Label
             {
                 Text      = $"\u26a0  Le fichier de destination existe déjà :\n{existingPath}",
-                Location  = new Point(12, 12),
-                Size      = new Size(508, 40),
+                Location  = new Point(PAD, PAD),
+                Width     = W - PAD * 2,
+                AutoSize  = false,
                 ForeColor = FG,
             };
-
-            // Champ nouveau nom
-            var lblName = new Label { Text = "Nouveau nom :", Location = new Point(12, 62), AutoSize = true, ForeColor = FG };
-            _txtName = new TextBox
+            // Calculer la hauteur nécessaire pour le texte
+            using (var g = Graphics.FromHwnd(IntPtr.Zero))
             {
-                Text        = AutoRename(existingPath),
-                Location    = new Point(118, 59),
-                Width       = 402,
-                BorderStyle = BorderStyle.FixedSingle,
-            };
+                var sz = g.MeasureString(lbl.Text, Font, lbl.Width);
+                lbl.Height = (int)Math.Ceiling(sz.Height) + 6;
+            }
 
-            // Checkbox "appliquer à tous" (visible en contexte batch)
-            var chkAll = new CheckBox
+            int y = PAD + lbl.Height + 8;
+
+            // --- Champ nouveau nom ---
+            var lblName = new Label
             {
-                Text      = "Appliquer à tous les fichiers suivants",
-                Location  = new Point(12, 95),
+                Text      = "Nouveau nom :",
+                Location  = new Point(PAD, y + 3),
                 AutoSize  = true,
                 ForeColor = FG,
             };
+            _txtName = new TextBox
+            {
+                Text        = AutoRename(existingPath),
+                Location    = new Point(118, y),
+                Width       = W - 118 - PAD,
+                BorderStyle = BorderStyle.FixedSingle,
+            };
+            y += 30;
 
-            // Boutons
-            var btnCancel    = MakeBtn("\u274c Annuler",  Color.FromArgb(160,  60,  60));
-            var btnOverwrite = MakeBtn("\u267b \u00c9craser",  Color.FromArgb(180, 100,  20));
-            var btnRename    = MakeBtn("\u270f Renommer", Color.FromArgb( 25, 118, 210));
+            // --- Checkbox ---
+            var chkAll = new CheckBox
+            {
+                Text      = "Appliquer à tous les fichiers suivants",
+                Location  = new Point(PAD, y),
+                AutoSize  = true,
+                ForeColor = FG,
+            };
+            y += 30;
 
-            btnCancel.Location    = new Point( 12, 170);
-            btnOverwrite.Location = new Point(178, 170);
-            btnRename.Location    = new Point(354, 170);
+            // --- Boutons ---
+            y += 8; // marge avant boutons
+            var btnCancel    = MakeBtn("\u274c Annuler",   Color.FromArgb(160,  60,  60));
+            var btnOverwrite = MakeBtn("\u267b \u00c9craser",   Color.FromArgb(180, 100,  20));
+            var btnRename    = MakeBtn("\u270f Renommer",  Color.FromArgb( 25, 118, 210));
+
+            btnCancel.Location    = new Point(PAD,             y);
+            btnOverwrite.Location = new Point(PAD + 166,       y);
+            btnRename.Location    = new Point(PAD + 166 + 166, y);
 
             btnCancel.Click += (_, _) =>
             {
@@ -90,18 +112,22 @@ namespace ImageMagickUI
                 var name = _txtName.Text.Trim();
                 if (string.IsNullOrEmpty(name)) { MessageBox.Show("Entrez un nom de fichier."); return; }
                 var dir   = Path.GetDirectoryName(existingPath) ?? "";
-                FinalPath = Path.Combine(dir, name);
+                FinalPath  = Path.Combine(dir, name);
                 ApplyToAll = chkAll.Checked;
-                Result    = Choice.Rename;
+                Result     = Choice.Rename;
                 Close();
             };
+
+            // Hauteur finale = position boutons + hauteur bouton + marge basse + chrome fenêtre
+            int clientH = y + BTN_H + PAD;
+            ClientSize  = new Size(W, clientH);
 
             Controls.AddRange(new Control[] { lbl, lblName, _txtName, chkAll, btnCancel, btnOverwrite, btnRename });
         }
 
         private static Button MakeBtn(string label, Color bg)
         {
-            var b = new Button { Text = label, Width = 155, Height = 28, BackColor = bg, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand };
+            var b = new Button { Text = label, Width = 155, Height = 30, BackColor = bg, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand };
             b.FlatAppearance.BorderSize = 0;
             return b;
         }
