@@ -54,10 +54,11 @@ namespace ImageMagickUI
             });
         }
 
+        // net48 : String.Contains n'accepte pas char, on utilise IndexOf
         private static IEnumerable<string> WrapArgs(IEnumerable<string> args)
         {
             foreach (var a in args)
-                yield return a.Contains(' ') ? $"\"{ a}\"" : a;
+                yield return a.IndexOf(' ') >= 0 ? $"\"{a}\"" : a;
         }
     }
 }

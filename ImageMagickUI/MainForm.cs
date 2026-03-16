@@ -136,7 +136,7 @@ namespace ImageMagickUI
         private TabPage BuildTabTransform()
         {
             var pg = Tab("\ud83d\udd04 Transformations");
-            var sc = Scroll(pg);
+            var sc = MakeScrollPanel(pg);
             int y = 8;
             Section(sc, "Redimensionner", ref y);
             var nW = Num(sc, "Largeur :", 1920, 1, 99999, ref y, 140);
@@ -178,7 +178,7 @@ namespace ImageMagickUI
         private TabPage BuildTabEffects()
         {
             var pg = Tab("\u2728 Effets visuels");
-            var sc = Scroll(pg);
+            var sc = MakeScrollPanel(pg);
             int y = 8;
             Section(sc, "Flou (Blur)", ref y);
             var bR = NumDec(sc, "Rayon :", 0, 0, 50, ref y, 80);
@@ -255,7 +255,7 @@ namespace ImageMagickUI
         private TabPage BuildTabColors()
         {
             var pg = Tab("\ud83c\udfa8 Couleurs");
-            var sc = Scroll(pg);
+            var sc = MakeScrollPanel(pg);
             int y = 8;
             Section(sc, "Espace colorim\u00e9trique", ref y);
             var spaces = new[] { "sRGB","Gray","CMYK","HSL","HSB","Lab","XYZ","YCbCr","YUV","LinearGray" };
@@ -310,7 +310,7 @@ namespace ImageMagickUI
         private TabPage BuildTabPdf()
         {
             var pg = Tab("\ud83d\udcc4 PDF");
-            var sc = Scroll(pg);
+            var sc = MakeScrollPanel(pg);
             int y = 8;
             Section(sc, "PDF \u2192 Images", ref y);
             AddNote(sc, "Sortie exemple : page-%04d.png", ref y);
@@ -364,7 +364,7 @@ namespace ImageMagickUI
         private TabPage BuildTabAnnotate()
         {
             var pg = Tab("\u270f\ufe0f Annotations");
-            var sc = Scroll(pg);
+            var sc = MakeScrollPanel(pg);
             int y = 8;
             Section(sc, "Ins\u00e9rer du texte", ref y);
             var txtContent   = TxtBox(sc, "Texte :", "Mon texte", ref y, 400);
@@ -409,7 +409,7 @@ namespace ImageMagickUI
         private TabPage BuildTabBatch()
         {
             var pg = Tab("\ud83d\udce6 Batch & Format");
-            var sc = Scroll(pg);
+            var sc = MakeScrollPanel(pg);
             int y = 8;
             Section(sc, "Traitement par lot", ref y);
             var txtBatchIn  = TxtBox(sc, "Dossier source :", "", ref y, 350);
@@ -479,7 +479,9 @@ namespace ImageMagickUI
 
         private Panel StyledPanel() => new Panel { BackColor = SURFACE, Padding = new Padding(4) };
         private TabPage Tab(string name) => new TabPage(name) { BackColor = BG, ForeColor = FG };
-        private Panel Scroll(TabPage tp)
+
+        // Renommé Scroll → MakeScrollPanel pour éviter le conflit avec ScrollableControl.Scroll (CS0108)
+        private Panel MakeScrollPanel(TabPage tp)
         {
             var s = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = BG };
             tp.Controls.Add(s);
