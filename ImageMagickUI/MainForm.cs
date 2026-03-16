@@ -16,7 +16,6 @@ namespace ImageMagickUI
         private TextBox    txtLog    = new();
         private TabControl tabs      = new();
 
-        // Tous les boutons enregistrés pour être désactivés pendant un traitement
         private readonly List<Button> _allButtons = new();
 
         private static readonly Color BG     = Color.FromArgb(245, 245, 248);
@@ -36,10 +35,13 @@ namespace ImageMagickUI
         private const int BTN_H  =  28;
         private const int INDENT =  12;
 
-        // Raccourci culture invariante
         private static string I(decimal v) => v.ToString(CultureInfo.InvariantCulture);
         private static string I(double  v) => v.ToString(CultureInfo.InvariantCulture);
         private static string I(int     v) => v.ToString(CultureInfo.InvariantCulture);
+
+        // ---- Gestion fichier existant pour batch
+        // null = toujours demander, true = toujours écraser, false = toujours renommer
+        private bool? _batchOverwriteAll = null;
 
         public MainForm()
         {
@@ -50,17 +52,65 @@ namespace ImageMagickUI
             ForeColor     = FG;
             Font          = new Font("Segoe UI", 9f);
             StartPosition = FormStartPosition.CenterScreen;
-            MagickRunner.OnLog      += AppendLog;
+            MagickRunner.OnLog       += AppendLog;
             MagickRunner.BusyChanged += SetBusy;
             BuildLayout();
         }
 
-        // Active/désactive tous les boutons depuis n'importe quel thread
         private void SetBusy(bool busy)
         {
             if (InvokeRequired) { Invoke(new Action(() => SetBusy(busy))); return; }
-            foreach (var b in _allButtons)
-                b.Enabled = !busy;
+            foreach (var b in _allButtons) b.Enabled = !busy;
+        }
+
+        // ----------------------------------------------------------------
+        // Résolution du chemin de destination avec dialogue si fichier existant.
+        // batchApplyAll : si non-null, ne pose pas de question et applique la politique.
+        // Retourne null si l'utilisateur annule.
+        // ----------------------------------------------------------------
+        private string? ResolveDestination(string proposed, ref bool? batchApplyAll)
+        {
+            if (!File.Exists(proposed)) return proposed;
+
+            // Mode batch "appliquer à tous"
+            if (batchApplyAll == true)  return proposed;   // écraser sans demander
+            if (batchApplyAll == false)                     // renommer sans demander
+            {
+                var dir  = Path.GetDirectoryName(proposed) ?? "";
+                var auto = OverwriteDialog.AutoRename(proposed);
+                return Path.Combine(dir, auto);
+            }
+
+            // Dialogue interactif (invoke depuis UI thread si nécessaire)
+            OverwriteDialog.Choice choice = OverwriteDialog.Choice.Cancel;
+            string finalPath = proposed;
+            bool applyAll = false;
+            bool applyAllOverwrite = false;
+
+            void ShowDialog()
+            {
+                using var dlg = new OverwriteDialog(proposed);
+                dlg.ShowDialog(this);
+                choice    = dlg.Result;
+                finalPath = dlg.FinalPath;
+                applyAll  = dlg.ApplyToAll;
+                applyAllOverwrite = (choice == OverwriteDialog.Choice.Overwrite);
+            }
+
+            if (InvokeRequired) Invoke(new Action(ShowDialog));
+            else ShowDialog();
+
+            if (applyAll)
+                batchApplyAll = applyAllOverwrite ? (bool?)true : false;
+
+            return choice == OverwriteDialog.Choice.Cancel ? null : finalPath;
+        }
+
+        // Variante simple pour fichier unique (pas de contexte batch)
+        private string? ResolveDestination(string proposed)
+        {
+            bool? dummy = null;
+            return ResolveDestination(proposed, ref dummy);
         }
 
         private void BuildLayout()
@@ -143,7 +193,7 @@ namespace ImageMagickUI
             var chRatio = RowChk(sc, "Conserver les proportions", true, ref y);
             BtnRow(sc, "Redimensionner", ref y, async () =>
             {
-                var sz = chRatio.Checked ? $"{I((int)nW.Value)}x{I((int)nH.Value)}>" : $"{I((int)nW.Value)}x{I((int)nH.Value)}";
+                var sz  = chRatio.Checked ? $"{I((int)nW.Value)}x{I((int)nH.Value)}>" : $"{I((int)nW.Value)}x{I((int)nH.Value)}";
                 await Run(txtInput.Text, txtOutput.Text, "-resize", sz);
             });
             Sec(sc, "Recadrer (Crop)", ref y);
@@ -358,7 +408,6 @@ namespace ImageMagickUI
         private TabPage BuildTabScan()
         {
             var pg = MakeTab("\ud83d\udda8 Scan / Impression"); var sc = MakeSP(pg); int y = 8;
-
             Sec(sc, "Présets rapides", ref y);
             Note(sc, "Charge les paramètres ci-dessous, puis cliquez Appliquer.", ref y);
 
@@ -372,6 +421,7 @@ namespace ImageMagickUI
             ComboBox? sSampling = null;
             CheckBox? sGray = null, sSepia = null, sNorm = null, sDeskew = null, sStrip = null;
             ComboBox? sNoiseType = null;
+            CheckBox? sDepth8 = null;
 
             void ApplyPreset(int dpi, decimal rot1, decimal rot2, decimal at1, decimal at2, decimal at3,
                              decimal shrpR, decimal shrpS, int qual, bool gray, bool sep,
@@ -419,12 +469,10 @@ namespace ImageMagickUI
             Sec(sc, "Résolution d'impression", ref y);
             Note(sc, "DPI simulé avant le scan. Plus bas = plus dégradé.", ref y);
             sDpi = Row(sc, "DPI :", 150, 72, 600, ref y, 90);
-
             Sec(sc, "Rotation / Désalignement", ref y);
             Note(sc, "Simule un document légèrement de travers sur le scanner.", ref y);
             sRot1 = RowD(sc, "Rotation base (\u00b0) :",        0.3m, -5,  5, ref y, 90);
             sRot2 = RowD(sc, "Variation aléatoire (\u00b0) :", 0.0m,  0,  3, ref y, 90);
-
             Sec(sc, "Bruit (grain scanner)", ref y);
             Note(sc, "Couches successives de bruit multiplicatif.", ref y);
             var noiseTypes = new[] { "Multiplicative", "Gaussian", "Uniform", "Laplacian" };
@@ -433,32 +481,23 @@ namespace ImageMagickUI
             sAt2 = RowD(sc, "Atténuation 2 :", 0.03m, 0, 2, ref y, 90);
             sAt3 = RowD(sc, "Atténuation 3 :", 0.00m, 0, 2, ref y, 90);
             Note(sc, "Atténuation 3 = 0 désactive la 3ème couche.", ref y);
-
             Sec(sc, "Nettété (Unsharp Mask)", ref y);
             Note(sc, "Simule la sur-nettété des pilotes de scanner.", ref y);
             sShrpR = RowD(sc, "Rayon :", 0.0m, 0,    10,  ref y, 90);
             sShrpS = RowD(sc, "Sigma :", 1.0m, 0.1m, 10,  ref y, 90);
-
             Sec(sc, "Luminosité / Contraste / Gamma", ref y);
             sBrightness = RowD(sc, "Luminosité :", 0,    -100, 100, ref y, 90);
             sContrast   = RowD(sc, "Contraste :",  0,    -100, 100, ref y, 90);
             sGamma      = RowD(sc, "Gamma :",      1.0m,  0.1m, 5,  ref y, 90);
-
-            // ---- Réduction de taille (hors compression JPEG)
             Sec(sc, "Réduction de taille", ref y);
             Note(sc, "Options complémentaires pour alléger le fichier sans dégrader la qualité visuelle.", ref y);
-
             sResample = Row(sc, "Resample DPI :", 0, 0, 600, ref y, 90);
-            Note(sc, "0 = désactivé. Rééchantillonne la résolution méta (ex: 150 → 72 dpi).", ref y);
-
-            // Sous-échantillonnage chroma JPEG : réduit 20-30% sans impact visuel perceptible
+            Note(sc, "0 = désactivé. Rééchantillonne la résolution méta.", ref y);
             var samplingOptions = new[] { "Aucun", "4:2:0 (chroma -20%)", "4:1:1 (chroma -30%)" };
             sSampling = RowCmb(sc, "Chroma subsampling :", samplingOptions, "Aucun", ref y, 220);
-            Note(sc, "4:2:0 est invisible sur texte/docs. 4:1:1 pour images colorées.", ref y);
-
-            var sDepth8 = RowChk(sc, "Forcer profondeur 8 bits (-depth 8)", true, ref y);
-            Note(sc, "Supprime les canaux 16 bits superflus (divise la taille par 2 si source 16 bits).", ref y);
-
+            Note(sc, "4:2:0 est invisible sur texte/docs.", ref y);
+            sDepth8 = RowChk(sc, "Forcer profondeur 8 bits (-depth 8)", true, ref y);
+            Note(sc, "Supprime les canaux 16 bits superflus.", ref y);
             Sec(sc, "Options de sortie", ref y);
             sGray   = RowChk(sc, "Niveaux de gris",             false, ref y);
             sSepia  = RowChk(sc, "Ton sépia (vieux document)",  false, ref y);
@@ -495,10 +534,13 @@ namespace ImageMagickUI
                 var exts  = new[] { ".png",".jpg",".jpeg",".tif",".tiff",".bmp",".gif",".pdf" };
                 var files = Directory.GetFiles(bIn.Text).Where(f => exts.Contains(Path.GetExtension(f).ToLower())).OrderBy(f => f).ToArray();
                 AppendLog($"\ud83d\udd04 Batch Scan — {files.Length} fichier(s)...");
+                _batchOverwriteAll = null;  // reset pour chaque nouveau batch
                 foreach (var f in files)
                 {
                     var ext = string.IsNullOrWhiteSpace(bExt.Text) ? Path.GetExtension(f) : bExt.Text.Trim();
-                    var dst = Path.Combine(bOut.Text, Path.GetFileNameWithoutExtension(f) + ext);
+                    var proposed = Path.Combine(bOut.Text, Path.GetFileNameWithoutExtension(f) + ext);
+                    var dst = ResolveDestination(proposed, ref _batchOverwriteAll);
+                    if (dst == null) { AppendLog("\u23f9 Batch annulé par l'utilisateur."); break; }
                     await ApplyScanEffect(
                         f, dst,
                         sDpi, sRot1, sRot2, sAt1, sAt2, sAt3, sNoiseType,
@@ -508,7 +550,6 @@ namespace ImageMagickUI
                 }
                 AppendLog("\u2705 Batch Scan terminé.");
             });
-
             return pg;
         }
 
@@ -526,51 +567,32 @@ namespace ImageMagickUI
             if (!File.Exists(src)) { AppendLog($"\u26a0 Fichier introuvable : {src}"); return; }
             if (string.IsNullOrWhiteSpace(dst)) { AppendLog("\u26a0 Définissez le fichier de sortie"); return; }
 
-            var rng      = new Random();
-            double var2  = (double)sRot2.Value * (rng.NextDouble() * 2 - 1);
-            double finalRot = (double)sRot1.Value + var2;
+            var rng     = new Random();
+            double var2 = (double)sRot2.Value * (rng.NextDouble() * 2 - 1);
+            double rot  = (double)sRot1.Value + var2;
 
             var a = new List<string> { "-density", I((int)sDpi.Value), src };
-
-            if (finalRot != 0)
-                a.AddRange(new[] { "-rotate", finalRot.ToString("0.##", CultureInfo.InvariantCulture) });
+            if (rot != 0) a.AddRange(new[] { "-rotate", rot.ToString("0.##", CultureInfo.InvariantCulture) });
 
             string noise = sNoiseType.Text;
             if (sAt1.Value > 0) a.AddRange(new[] { "-attenuate", I(sAt1.Value), "+noise", noise });
             if (sAt2.Value > 0) a.AddRange(new[] { "-attenuate", I(sAt2.Value), "+noise", noise });
             if (sAt3.Value > 0) a.AddRange(new[] { "-attenuate", I(sAt3.Value), "+noise", noise });
-
-            if (sShrpS.Value > 0)
-                a.AddRange(new[] { "-unsharp", $"{I(sShrpR.Value)}x{I(sShrpS.Value)}+0.5+0.05" });
-
+            if (sShrpS.Value > 0) a.AddRange(new[] { "-unsharp", $"{I(sShrpR.Value)}x{I(sShrpS.Value)}+0.5+0.05" });
             if (sBrightness.Value != 0 || sContrast.Value != 0)
                 a.AddRange(new[] { "-brightness-contrast", $"{I(sBrightness.Value)}x{I(sContrast.Value)}" });
-
-            if (sGamma.Value != 1.0m)
-                a.AddRange(new[] { "-gamma", I(sGamma.Value) });
-
-            // Options réduction de taille
-            if (sDepth8.Checked)
-                a.AddRange(new[] { "-depth", "8" });
-
-            if (sResample.Value > 0)
-                a.AddRange(new[] { "-resample", I((int)sResample.Value) });
-
-            // Sous-échantillonnage chroma
-            if (sSampling.SelectedIndex == 1)
-                a.AddRange(new[] { "-sampling-factor", "4:2:0" });
-            else if (sSampling.SelectedIndex == 2)
-                a.AddRange(new[] { "-sampling-factor", "4:1:1" });
-
+            if (sGamma.Value != 1.0m) a.AddRange(new[] { "-gamma", I(sGamma.Value) });
+            if (sDepth8.Checked)      a.AddRange(new[] { "-depth", "8" });
+            if (sResample.Value > 0)  a.AddRange(new[] { "-resample", I((int)sResample.Value) });
+            if (sSampling.SelectedIndex == 1) a.AddRange(new[] { "-sampling-factor", "4:2:0" });
+            else if (sSampling.SelectedIndex == 2) a.AddRange(new[] { "-sampling-factor", "4:1:1" });
             if (sGray.Checked)   a.AddRange(new[] { "-colorspace", "Gray" });
             if (sSepia.Checked)  a.AddRange(new[] { "-sepia-tone", "80%" });
             if (sNorm.Checked)   a.Add("-normalize");
             if (sDeskew.Checked) a.AddRange(new[] { "-deskew", "40%" });
             if (sStrip.Checked)  a.Add("-strip");
-
             a.AddRange(new[] { "-compress", "JPEG", "-quality", I((int)sQual.Value) });
             a.Add(dst);
-
             await MagickRunner.RunAsync(a);
         }
 
@@ -590,9 +612,12 @@ namespace ImageMagickUI
                 var exts  = new[] { ".png",".jpg",".jpeg",".tif",".tiff",".pdf",".bmp",".gif" };
                 var files = Directory.GetFiles(bIn.Text).Where(f => exts.Contains(Path.GetExtension(f).ToLower())).ToArray();
                 AppendLog($"\ud83d\udd04 Batch '{bOp.Text}' \u2014 {files.Length} fichier(s)...");
+                _batchOverwriteAll = null;
                 foreach (var f in files)
                 {
-                    var dst = Path.Combine(bOut.Text, Path.GetFileName(f));
+                    var proposed = Path.Combine(bOut.Text, Path.GetFileName(f));
+                    var dst = ResolveDestination(proposed, ref _batchOverwriteAll);
+                    if (dst == null) { AppendLog("\u23f9 Batch annulé par l'utilisateur."); break; }
                     string[] args = bOp.Text switch
                     {
                         "Grayscale"   => new[] { f, "-colorspace", "Gray", dst },
@@ -626,9 +651,10 @@ namespace ImageMagickUI
         private async Task Run(string src, string dst, params string[] middle)
         {
             if (!File.Exists(src)) { AppendLog("\u26a0 Fichier source introuvable"); return; }
-            if (string.IsNullOrWhiteSpace(dst)) { AppendLog("\u26a0 D\u00e9finissez le fichier de sortie"); return; }
+            var resolved = ResolveDestination(dst);
+            if (resolved == null) { AppendLog("\u23f9 Opération annulée."); return; }
             var a = new List<string> { src };
-            a.AddRange(middle); a.Add(dst);
+            a.AddRange(middle); a.Add(resolved);
             await MagickRunner.RunAsync(a);
         }
 
