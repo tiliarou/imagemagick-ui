@@ -20,11 +20,24 @@ namespace ImageMagickUI
 
         private static void Log(string msg) => OnLog?.Invoke(msg);
 
+        /// <summary>
+        /// Lance magick normalement : stdout/stderr → OnLog.
+        /// </summary>
         public static Task RunAsync(IEnumerable<string> args)
+            => RunCoreAsync(args, null);
+
+        /// <summary>
+        /// Lance magick et redirige toute la sortie vers <paramref name="outputCollector"/> au lieu de OnLog.
+        /// Utilisé par 'identify -verbose' pour ne pas polluer la console principale.
+        /// </summary>
+        public static Task RunCollectAsync(IEnumerable<string> args, Action<string> outputCollector)
+            => RunCoreAsync(args, outputCollector);
+
+        private static Task RunCoreAsync(IEnumerable<string> args, Action<string>? collector)
         {
             var safeArgs = SanitizeArgs(args);
             var joined   = string.Join(" ", WrapArgs(safeArgs));
-            Log("\u25b6 " + Exe + " " + joined);
+            if (collector == null) Log("\u25b6 " + Exe + " " + joined);
 
             return Task.Run(() =>
             {
@@ -49,17 +62,30 @@ namespace ImageMagickUI
                     };
 
                     using var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
-                    proc.OutputDataReceived += (_, e) => { if (e.Data != null) Log(e.Data); };
-                    proc.ErrorDataReceived  += (_, e) => { if (e.Data != null) Log("\u26a0 " + e.Data); };
+
+                    if (collector != null)
+                    {
+                        proc.OutputDataReceived += (_, e) => { if (e.Data != null) collector(e.Data); };
+                        proc.ErrorDataReceived  += (_, e) => { if (e.Data != null) collector("\u26a0 " + e.Data); };
+                    }
+                    else
+                    {
+                        proc.OutputDataReceived += (_, e) => { if (e.Data != null) Log(e.Data); };
+                        proc.ErrorDataReceived  += (_, e) => { if (e.Data != null) Log("\u26a0 " + e.Data); };
+                    }
+
                     proc.Start();
                     proc.BeginOutputReadLine();
                     proc.BeginErrorReadLine();
                     proc.WaitForExit();
-                    Log(proc.ExitCode == 0 ? "\u2705 Succ\u00e8s" : $"\u274c Code retour : {proc.ExitCode}");
+
+                    if (collector == null)
+                        Log(proc.ExitCode == 0 ? "\u2705 Succ\u00e8s" : $"\u274c Code retour : {proc.ExitCode}");
                 }
                 catch (Exception ex)
                 {
-                    Log("\u274c " + ex.Message);
+                    if (collector != null) collector("\u274c " + ex.Message);
+                    else Log("\u274c " + ex.Message);
                 }
                 finally
                 {
@@ -76,7 +102,6 @@ namespace ImageMagickUI
             foreach (var a in args)
             {
                 var s = a;
-                // Ne pas toucher aux chemins (contiennent \ ou /) ni aux flags ImageMagick (-option)
                 bool isPath = s.IndexOf("\\") >= 0 || s.IndexOf("/") >= 0;
                 if (!isPath)
                 {
@@ -90,7 +115,6 @@ namespace ImageMagickUI
             }
         }
 
-        // IndexOf(string) disponible en net48 (contrairement à IndexOf(char) via surcharge BCL)
         private static IEnumerable<string> WrapArgs(IEnumerable<string> args)
         {
             foreach (var a in args)

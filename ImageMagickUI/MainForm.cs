@@ -39,7 +39,6 @@ namespace ImageMagickUI
         private static string I(double  v) => v.ToString(CultureInfo.InvariantCulture);
         private static string I(int     v) => v.ToString(CultureInfo.InvariantCulture);
 
-        // ---- Gestion fichier existant pour batch
         // null = toujours demander, true = toujours écraser, false = toujours renommer
         private bool? _batchOverwriteAll = null;
 
@@ -64,24 +63,20 @@ namespace ImageMagickUI
         }
 
         // ----------------------------------------------------------------
-        // Résolution du chemin de destination avec dialogue si fichier existant.
-        // batchApplyAll : si non-null, ne pose pas de question et applique la politique.
-        // Retourne null si l'utilisateur annule.
+        // Résolution destination avec dialogue si fichier existant.
         // ----------------------------------------------------------------
         private string? ResolveDestination(string proposed, ref bool? batchApplyAll)
         {
             if (!File.Exists(proposed)) return proposed;
 
-            // Mode batch "appliquer à tous"
-            if (batchApplyAll == true)  return proposed;   // écraser sans demander
-            if (batchApplyAll == false)                     // renommer sans demander
+            if (batchApplyAll == true)  return proposed;
+            if (batchApplyAll == false)
             {
                 var dir  = Path.GetDirectoryName(proposed) ?? "";
                 var auto = OverwriteDialog.AutoRename(proposed);
                 return Path.Combine(dir, auto);
             }
 
-            // Dialogue interactif (invoke depuis UI thread si nécessaire)
             OverwriteDialog.Choice choice = OverwriteDialog.Choice.Cancel;
             string finalPath = proposed;
             bool applyAll = false;
@@ -91,9 +86,9 @@ namespace ImageMagickUI
             {
                 using var dlg = new OverwriteDialog(proposed);
                 dlg.ShowDialog(this);
-                choice    = dlg.Result;
-                finalPath = dlg.FinalPath;
-                applyAll  = dlg.ApplyToAll;
+                choice           = dlg.Result;
+                finalPath        = dlg.FinalPath;
+                applyAll         = dlg.ApplyToAll;
                 applyAllOverwrite = (choice == OverwriteDialog.Choice.Overwrite);
             }
 
@@ -106,7 +101,6 @@ namespace ImageMagickUI
             return choice == OverwriteDialog.Choice.Cancel ? null : finalPath;
         }
 
-        // Variante simple pour fichier unique (pas de contexte batch)
         private string? ResolveDestination(string proposed)
         {
             bool? dummy = null;
@@ -138,12 +132,26 @@ namespace ImageMagickUI
             AddLbl(p, "\ud83d\udcbe Sortie  :", 42);
             txtOutput = AddTxt(p, 490, 95, 42);
             AddBtn(p, "Parcourir", 595, 40, 105, (_, _) => BrowseSave(txtOutput));
-            AddBtn(p, "\u2139 Infos fichier", 8, 74, 140, async (_, _) =>
-            {
-                if (!File.Exists(txtInput.Text)) { AppendLog("\u26a0 Fichier source introuvable"); return; }
-                await MagickRunner.RunAsync(new[] { "identify", "-verbose", txtInput.Text });
-            });
+            AddBtn(p, "\u2139 Infos fichier", 8, 74, 140, async (_, _) => await ShowFileInfoAsync(txtInput.Text));
             return p;
+        }
+
+        // ----------------------------------------------------------------
+        // Infos fichier : fenêtre séparée, ne pollue pas la console
+        // ----------------------------------------------------------------
+        private async Task ShowFileInfoAsync(string path)
+        {
+            if (!File.Exists(path)) { AppendLog("\u26a0 Fichier source introuvable"); return; }
+
+            var win = new InfoWindow(path);
+            win.Show(this);
+
+            var sb = new System.Text.StringBuilder();
+            await MagickRunner.RunCollectAsync(
+                new[] { "identify", "-verbose", path },
+                line => sb.AppendLine(line));
+
+            win.SetContent(sb.ToString());
         }
 
         private TabControl BuildTabs()
@@ -513,12 +521,17 @@ namespace ImageMagickUI
 
             y += 6;
             BtnRow(sc, "\ud83d\udda8 Appliquer sur le fichier source", ref y, async () =>
+            {
+                // Passe par ResolveDestination avant de lancer le traitement
+                var dst = ResolveDestination(txtOutput.Text);
+                if (dst == null) { AppendLog("\u23f9 Opération annulée."); return; }
                 await ApplyScanEffect(
-                    txtInput.Text, txtOutput.Text,
-                    sDpi, sRot1, sRot2, sAt1, sAt2, sAt3, sNoiseType,
-                    sShrpR, sShrpS, sBrightness, sContrast, sGamma,
-                    sQual, sGray, sSepia, sNorm, sDeskew, sStrip,
-                    sResample, sSampling, sDepth8));
+                    txtInput.Text, dst,
+                    sDpi!, sRot1!, sRot2!, sAt1!, sAt2!, sAt3!, sNoiseType!,
+                    sShrpR!, sShrpS!, sBrightness!, sContrast!, sGamma!,
+                    sQual!, sGray!, sSepia!, sNorm!, sDeskew!, sStrip!,
+                    sResample!, sSampling!, sDepth8!);
+            });
 
             Sec(sc, "Traitement par lot (dossier)", ref y);
             Note(sc, "Applique les mêmes réglages ci-dessus à toutes les images d'un dossier.", ref y);
@@ -534,7 +547,7 @@ namespace ImageMagickUI
                 var exts  = new[] { ".png",".jpg",".jpeg",".tif",".tiff",".bmp",".gif",".pdf" };
                 var files = Directory.GetFiles(bIn.Text).Where(f => exts.Contains(Path.GetExtension(f).ToLower())).OrderBy(f => f).ToArray();
                 AppendLog($"\ud83d\udd04 Batch Scan — {files.Length} fichier(s)...");
-                _batchOverwriteAll = null;  // reset pour chaque nouveau batch
+                _batchOverwriteAll = null;
                 foreach (var f in files)
                 {
                     var ext = string.IsNullOrWhiteSpace(bExt.Text) ? Path.GetExtension(f) : bExt.Text.Trim();
@@ -543,10 +556,10 @@ namespace ImageMagickUI
                     if (dst == null) { AppendLog("\u23f9 Batch annulé par l'utilisateur."); break; }
                     await ApplyScanEffect(
                         f, dst,
-                        sDpi, sRot1, sRot2, sAt1, sAt2, sAt3, sNoiseType,
-                        sShrpR, sShrpS, sBrightness, sContrast, sGamma,
-                        sQual, sGray, sSepia, sNorm, sDeskew, sStrip,
-                        sResample, sSampling, sDepth8);
+                        sDpi!, sRot1!, sRot2!, sAt1!, sAt2!, sAt3!, sNoiseType!,
+                        sShrpR!, sShrpS!, sBrightness!, sContrast!, sGamma!,
+                        sQual!, sGray!, sSepia!, sNorm!, sDeskew!, sStrip!,
+                        sResample!, sSampling!, sDepth8!);
                 }
                 AppendLog("\u2705 Batch Scan terminé.");
             });
@@ -639,11 +652,7 @@ namespace ImageMagickUI
             BtnRow(sc, "Convertir", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-quality", I((int)cQl.Value)));
             Sec(sc, "M\u00e9tadonn\u00e9es", ref y);
             BtnRow(sc, "Supprimer m\u00e9tadonn\u00e9es (-strip)", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-strip"));
-            BtnRow(sc, "\u2139 Afficher infos (identify)", ref y, async () =>
-            {
-                if (!File.Exists(txtInput.Text)) { AppendLog("\u26a0 Fichier introuvable"); return; }
-                await MagickRunner.RunAsync(new[] { "identify", "-verbose", txtInput.Text });
-            });
+            BtnRow(sc, "\u2139 Afficher infos (identify)", ref y, async () => await ShowFileInfoAsync(txtInput.Text));
             return pg;
         }
 
