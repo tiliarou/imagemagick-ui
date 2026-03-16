@@ -14,25 +14,30 @@ namespace ImageMagickUI
         private TextBox  txtLog    = new();
         private TabControl tabs    = new();
 
-        private static readonly Color BG      = Color.FromArgb(22,  22,  35);
-        private static readonly Color SURFACE = Color.FromArgb(35,  35,  55);
-        private static readonly Color ACCENT  = Color.FromArgb(60,  100, 200);
-        private static readonly Color GOLD    = Color.FromArgb(255, 215,   0);
-        private static readonly Color FG      = Color.FromArgb(220, 220, 235);
+        // ----- Palette thème clair -----
+        private static readonly Color BG      = Color.FromArgb(245, 245, 248);  // fond très léger
+        private static readonly Color SURFACE = Color.White;
+        private static readonly Color ACCENT  = Color.FromArgb(25,  118, 210);  // bleu Material
+        private static readonly Color GOLD    = Color.FromArgb(130,  80,   0);  // brun-or lisible
+        private static readonly Color FG      = Color.FromArgb( 30,  30,  30);  // quasi-noir
+        private static readonly Color BORDER  = Color.FromArgb(200, 200, 210);
+        private static readonly Color LOG_BG  = Color.FromArgb(250, 250, 252);
+        private static readonly Color LOG_FG  = Color.FromArgb( 20,  90,  20);  // vert foncé
 
         public MainForm()
         {
-            Text            = "ImageMagick UI  —  WinForms";
-            Size            = new Size(1100, 820);
-            MinimumSize     = new Size(900,  650);
-            BackColor       = BG;
-            ForeColor       = FG;
-            Font            = new Font("Segoe UI", 9f);
-            StartPosition   = FormStartPosition.CenterScreen;
+            Text          = "ImageMagick UI  —  WinForms";
+            Size          = new Size(1100, 820);
+            MinimumSize   = new Size(900,  650);
+            BackColor     = BG;
+            ForeColor     = FG;
+            Font          = new Font("Segoe UI", 9f);
+            StartPosition = FormStartPosition.CenterScreen;
             MagickRunner.OnLog += AppendLog;
             BuildLayout();
         }
 
+        // ------------------------------------------------------------------ layout
         private void BuildLayout()
         {
             var mainPanel = new TableLayoutPanel
@@ -43,7 +48,7 @@ namespace ImageMagickUI
                 BackColor   = BG,
                 Padding     = new Padding(8),
             };
-            mainPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 100));
+            mainPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 108));
             mainPanel.RowStyles.Add(new RowStyle(SizeType.Percent,  100));
             mainPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 170));
             mainPanel.Controls.Add(BuildIOBar(),   0, 0);
@@ -56,33 +61,37 @@ namespace ImageMagickUI
         {
             var p = StyledPanel();
             p.Dock = DockStyle.Fill;
+
             var lblIn = Label("\ud83d\udcc2 Source :");
-            lblIn.Location = new Point(8, 8);
-            txtInput = TextBox(500);
-            txtInput.Location = new Point(90, 6);
+            lblIn.Location = new Point(8, 10);
+            txtInput = TextBox(490);
+            txtInput.Location = new Point(95, 8);
             var btnIn = Btn("Parcourir", (_, _) =>
             {
                 using var d = new OpenFileDialog { Filter = AllFilesFilter() };
                 if (d.ShowDialog() == DialogResult.OK) txtInput.Text = d.FileName;
-            });
-            btnIn.Location = new Point(600, 5);
+            }, 110);
+            btnIn.Location = new Point(592, 7);
+
             var lblOut = Label("\ud83d\udcbe Sortie  :");
-            lblOut.Location = new Point(8, 40);
-            txtOutput = TextBox(500);
-            txtOutput.Location = new Point(90, 38);
+            lblOut.Location = new Point(8, 44);
+            txtOutput = TextBox(490);
+            txtOutput.Location = new Point(95, 42);
             var btnOut = Btn("Parcourir", (_, _) =>
             {
                 using var d = new SaveFileDialog { Filter = AllFilesFilter() };
                 if (d.ShowDialog() == DialogResult.OK) txtOutput.Text = d.FileName;
-            });
-            btnOut.Location = new Point(600, 37);
+            }, 110);
+            btnOut.Location = new Point(592, 41);
+
             var btnInfo = Btn("\u2139 Infos fichier", async (_, _) =>
             {
                 var src = txtInput.Text;
                 if (!File.Exists(src)) { AppendLog("\u26a0 Fichier source introuvable"); return; }
                 await MagickRunner.RunAsync(new[] { "identify", "-verbose", src });
-            });
-            btnInfo.Location = new Point(8, 68);
+            }, 140);
+            btnInfo.Location = new Point(8, 74);
+
             p.Controls.AddRange(new Control[] { lblIn, txtInput, btnIn, lblOut, txtOutput, btnOut, btnInfo });
             return p;
         }
@@ -94,7 +103,7 @@ namespace ImageMagickUI
                 Dock      = DockStyle.Fill,
                 BackColor = SURFACE,
                 ForeColor = FG,
-                Font      = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+                Font      = new Font("Segoe UI", 9f, FontStyle.Bold),
             };
             tabs.TabPages.Add(BuildTabTransform());
             tabs.TabPages.Add(BuildTabEffects());
@@ -109,30 +118,34 @@ namespace ImageMagickUI
         {
             var p = StyledPanel();
             p.Dock = DockStyle.Fill;
+
             var lbl = Label("\ud83d\udccb Console");
             lbl.ForeColor = GOLD;
             lbl.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
             lbl.Location = new Point(6, 4);
+
             txtLog = new TextBox
             {
                 Multiline  = true,
                 ReadOnly   = true,
                 ScrollBars = ScrollBars.Vertical,
-                BackColor  = Color.FromArgb(15, 15, 25),
-                ForeColor  = Color.FromArgb(180, 230, 180),
+                BackColor  = LOG_BG,
+                ForeColor  = LOG_FG,
                 Font       = new Font("Consolas", 8.5f),
                 Location   = new Point(6, 24),
-                Size       = new Size(1060, 115),
+                Size       = new Size(1060, 112),
                 Anchor     = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top | AnchorStyles.Bottom,
+                BorderStyle = BorderStyle.FixedSingle,
                 Text       = "Pr\u00eat. S\u00e9lectionnez un fichier source et destination...",
             };
-            var btnClear = Btn("\ud83d\uddd1 Effacer", (_, _) => txtLog.Clear());
-            btnClear.Location = new Point(6, 144);
+            var btnClear = Btn("\ud83d\uddd1 Effacer", (_, _) => txtLog.Clear(), 100);
+            btnClear.Location = new Point(6, 142);
             p.Controls.AddRange(new Control[] { lbl, txtLog, btnClear });
             p.Resize += (_, _) => { txtLog.Width = p.Width - 18; };
             return p;
         }
 
+        // ------------------------------------------------------------------ onglets
         private TabPage BuildTabTransform()
         {
             var pg = Tab("\ud83d\udd04 Transformations");
@@ -459,6 +472,7 @@ namespace ImageMagickUI
             return pg;
         }
 
+        // ------------------------------------------------------------------ helpers
         private async Task Run(string src, string dst, params string[] middle)
         {
             if (!File.Exists(src)) { AppendLog("\u26a0 Fichier source introuvable"); return; }
@@ -477,91 +491,187 @@ namespace ImageMagickUI
             txtLog.ScrollToCaret();
         }
 
-        private Panel StyledPanel() => new Panel { BackColor = SURFACE, Padding = new Padding(4) };
+        private Panel StyledPanel() => new Panel
+        {
+            BackColor   = SURFACE,
+            Padding     = new Padding(4),
+            BorderStyle = BorderStyle.FixedSingle,
+        };
+
         private TabPage Tab(string name) => new TabPage(name) { BackColor = BG, ForeColor = FG };
 
-        // Renommé Scroll → MakeScrollPanel pour éviter le conflit avec ScrollableControl.Scroll (CS0108)
         private Panel MakeScrollPanel(TabPage tp)
         {
             var s = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = BG };
             tp.Controls.Add(s);
             return s;
         }
+
         private Label Label(string text) => new Label { Text = text, ForeColor = FG, AutoSize = true };
-        private TextBox TextBox(int width) => new TextBox { Width = width, BackColor = SURFACE, ForeColor = FG };
+
+        private TextBox TextBox(int width) => new TextBox
+        {
+            Width       = width,
+            BackColor   = SURFACE,
+            ForeColor   = FG,
+            BorderStyle = BorderStyle.FixedSingle,
+        };
+
         private Button Btn(string label, EventHandler handler, int width = 160)
         {
-            var b = new Button { Text = label, Width = width, Height = 28, BackColor = ACCENT, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand };
+            var b = new Button
+            {
+                Text      = label,
+                Width     = width,
+                Height    = 28,
+                BackColor = ACCENT,
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Cursor    = Cursors.Hand,
+            };
             b.FlatAppearance.BorderSize = 0;
             b.Click += handler;
             return b;
         }
+
         private void Section(Panel sc, string title, ref int y)
         {
-            var l = new Label { Text = "\u2014 " + title + " \u2014", ForeColor = GOLD, Font = new Font("Segoe UI", 9f, FontStyle.Bold), AutoSize = true, Location = new Point(8, y) };
-            sc.Controls.Add(l); y += 24;
+            var sep = new Panel
+            {
+                Location  = new Point(8, y + 6),
+                Size      = new Size(sc.Width > 20 ? sc.Width - 20 : 600, 1),
+                BackColor = BORDER,
+                Anchor    = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top,
+            };
+            var l = new Label
+            {
+                Text      = title,
+                ForeColor = GOLD,
+                Font      = new Font("Segoe UI", 9f, FontStyle.Bold),
+                AutoSize  = true,
+                Location  = new Point(8, y + 10),
+            };
+            sc.Controls.Add(sep);
+            sc.Controls.Add(l);
+            y += 28;
         }
+
         private void AddNote(Panel sc, string text, ref int y)
         {
-            var l = new Label { Text = text, ForeColor = Color.FromArgb(160, 160, 180), AutoSize = true, Font = new Font("Segoe UI", 8.5f, FontStyle.Italic), Location = new Point(12, y) };
+            var l = new Label
+            {
+                Text      = text,
+                ForeColor = Color.FromArgb(100, 100, 120),
+                AutoSize  = true,
+                Font      = new Font("Segoe UI", 8.5f, FontStyle.Italic),
+                Location  = new Point(12, y),
+            };
             sc.Controls.Add(l); y += 20;
         }
+
         private NumericUpDown Num(Panel sc, string label, int def, int min, int max, ref int y, int w = 80)
         {
             var lbl = new Label { Text = label, ForeColor = FG, AutoSize = true, Location = new Point(12, y + 3) };
-            var nud = new NumericUpDown { Minimum = min, Maximum = max, Value = def, Width = w, Location = new Point(lbl.PreferredWidth + 20, y), BackColor = SURFACE, ForeColor = FG, BorderStyle = BorderStyle.FixedSingle };
+            var nud = new NumericUpDown
+            {
+                Minimum     = min, Maximum = max, Value = def, Width = w,
+                Location    = new Point(lbl.PreferredWidth + 20, y),
+                BackColor   = SURFACE, ForeColor = FG, BorderStyle = BorderStyle.FixedSingle,
+            };
             sc.Controls.AddRange(new Control[] { lbl, nud }); y += 30;
             return nud;
         }
+
         private NumericUpDown NumDec(Panel sc, string label, decimal def, decimal min, decimal max, ref int y, int w = 80)
         {
             var lbl = new Label { Text = label, ForeColor = FG, AutoSize = true, Location = new Point(12, y + 3) };
-            var nud = new NumericUpDown { Minimum = min, Maximum = max, Value = def, DecimalPlaces = 2, Increment = 0.1m, Width = w, Location = new Point(lbl.PreferredWidth + 20, y), BackColor = SURFACE, ForeColor = FG, BorderStyle = BorderStyle.FixedSingle };
+            var nud = new NumericUpDown
+            {
+                Minimum = min, Maximum = max, Value = def,
+                DecimalPlaces = 2, Increment = 0.1m, Width = w,
+                Location  = new Point(lbl.PreferredWidth + 20, y),
+                BackColor = SURFACE, ForeColor = FG, BorderStyle = BorderStyle.FixedSingle,
+            };
             sc.Controls.AddRange(new Control[] { lbl, nud }); y += 30;
             return nud;
         }
+
         private TextBox TxtBox(Panel sc, string label, string def, ref int y, int width = 200)
         {
             var lbl = new Label { Text = label, ForeColor = FG, AutoSize = true, Location = new Point(12, y + 3) };
-            var txt = new TextBox { Text = def, Width = width, Location = new Point(lbl.PreferredWidth + 20, y), BackColor = SURFACE, ForeColor = FG };
+            var txt = new TextBox
+            {
+                Text = def, Width = width,
+                Location    = new Point(lbl.PreferredWidth + 20, y),
+                BackColor   = SURFACE, ForeColor = FG, BorderStyle = BorderStyle.FixedSingle,
+            };
             sc.Controls.AddRange(new Control[] { lbl, txt }); y += 30;
             return txt;
         }
+
         private ComboBox Combo(Panel sc, string label, string[] items, string def, ref int y, int width = 160)
         {
             var lbl = new Label { Text = label, ForeColor = FG, AutoSize = true, Location = new Point(12, y + 3) };
-            var cmb = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = width, Location = new Point(lbl.PreferredWidth + 20, y), BackColor = SURFACE, ForeColor = FG };
+            var cmb = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList, Width = width,
+                Location  = new Point(lbl.PreferredWidth + 20, y),
+                BackColor = SURFACE, ForeColor = FG,
+            };
             cmb.Items.AddRange(items); cmb.SelectedItem = def;
             sc.Controls.AddRange(new Control[] { lbl, cmb }); y += 30;
             return cmb;
         }
+
         private CheckBox Check(Panel sc, string label, bool def, ref int y)
         {
             var chk = new CheckBox { Text = label, Checked = def, ForeColor = FG, Location = new Point(12, y), AutoSize = true };
             sc.Controls.Add(chk); y += 26;
             return chk;
         }
+
         private void BtnAction(Panel sc, string label, ref int y, Func<Task> action)
         {
-            var b = new Button { Text = label, Width = 220, Height = 28, Location = new Point(12, y), BackColor = ACCENT, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand };
+            var b = new Button
+            {
+                Text      = label, Width = 230, Height = 28,
+                Location  = new Point(12, y),
+                BackColor = ACCENT, ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand,
+            };
             b.FlatAppearance.BorderSize = 0;
             b.Click += async (_, _) => await action();
             sc.Controls.Add(b); y += 36;
         }
+
         private void AddBrowseFileBtn(Panel sc, TextBox target, ref int y)
         {
-            var b = new Button { Text = "\ud83d\udcc2 Parcourir...", Width = 130, Height = 26, Location = new Point(12, y), BackColor = Color.FromArgb(50, 70, 120), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand };
+            var b = new Button
+            {
+                Text      = "\ud83d\udcc2 Parcourir...", Width = 130, Height = 26,
+                Location  = new Point(12, y),
+                BackColor = Color.FromArgb(70, 130, 180), ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand,
+            };
             b.FlatAppearance.BorderSize = 0;
             b.Click += (_, _) => { using var d = new OpenFileDialog { Filter = AllFilesFilter() }; if (d.ShowDialog() == DialogResult.OK) target.Text = d.FileName; };
             sc.Controls.Add(b); y += 30;
         }
+
         private void AddBrowseFolderBtn(Panel sc, TextBox target, ref int y)
         {
-            var b = new Button { Text = "\ud83d\udcc1 Dossier...", Width = 120, Height = 26, Location = new Point(12, y), BackColor = Color.FromArgb(50, 70, 120), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand };
+            var b = new Button
+            {
+                Text      = "\ud83d\udcc1 Dossier...", Width = 120, Height = 26,
+                Location  = new Point(12, y),
+                BackColor = Color.FromArgb(70, 130, 180), ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand,
+            };
             b.FlatAppearance.BorderSize = 0;
             b.Click += (_, _) => { using var d = new FolderBrowserDialog(); if (d.ShowDialog() == DialogResult.OK) target.Text = d.SelectedPath; };
             sc.Controls.Add(b); y += 30;
         }
+
         private static string AllFilesFilter() =>
             "Tous les fichiers|*.*|Images|*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp;*.gif;*.webp|PDF|*.pdf";
     }
