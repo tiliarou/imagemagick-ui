@@ -22,7 +22,6 @@ namespace ImageMagickUI
 
         public static Task RunAsync(IEnumerable<string> args)
         {
-            // Forcer point décimal : on remplace toute virgule par un point dans les args numériques
             var safeArgs = SanitizeArgs(args);
             var joined   = string.Join(" ", WrapArgs(safeArgs));
             Log("\u25b6 " + Exe + " " + joined);
@@ -70,30 +69,32 @@ namespace ImageMagickUI
             });
         }
 
-        // Remplace les virgules décimales par des points dans les tokens numériques
-        // (protection contre les paramètres régionaux Windows)
+        // Remplace les virgules décimales par des points dans les tokens numériques.
+        // Surcharges string uniquement (compatibilité net48 : pas de .Contains(char) ni .Replace(char,char)).
         private static IEnumerable<string> SanitizeArgs(IEnumerable<string> args)
         {
             foreach (var a in args)
             {
-                // Token numérique pur (ex: "0,30" "1920x1080" "-0,5") : on remplace les virgules
-                // On ne touche pas aux chemins de fichiers ou flags ImageMagick
                 var s = a;
-                if (!s.StartsWith("-") && !System.IO.Path.IsPathRooted(s) && !s.Contains('\\') && !s.Contains('/'))
-                    s = s.Replace(',', '.');
-                // Pour les valeurs numériques passées en valeur simple (ex: "0,30")
-                // On applique aussi si ça commence par un chiffre ou signe
-                else if ((s.Length > 0 && (char.IsDigit(s[0]) || s[0] == '-' || s[0] == '+'))
-                         && !s.Contains('\\') && !s.Contains('/'))
-                    s = s.Replace(',', '.');
+                // Ne pas toucher aux chemins (contiennent \ ou /) ni aux flags ImageMagick (-option)
+                bool isPath = s.IndexOf("\\") >= 0 || s.IndexOf("/") >= 0;
+                if (!isPath)
+                {
+                    bool isFlag = s.StartsWith("-");
+                    bool startsNumeric = s.Length > 0 && (char.IsDigit(s[0]) || s[0] == '+');
+                    bool flagNumericVal = isFlag && s.Length > 1 && (char.IsDigit(s[1]) || s[1] == '+');
+                    if (!isFlag || startsNumeric || flagNumericVal)
+                        s = s.Replace(",", ".");
+                }
                 yield return s;
             }
         }
 
+        // IndexOf(string) disponible en net48 (contrairement à IndexOf(char) via surcharge BCL)
         private static IEnumerable<string> WrapArgs(IEnumerable<string> args)
         {
             foreach (var a in args)
-                yield return a.IndexOf(' ') >= 0 ? $"\"{a}\"" : a;
+                yield return a.IndexOf(" ") >= 0 ? $"\"{a}\"" : a;
         }
     }
 }
