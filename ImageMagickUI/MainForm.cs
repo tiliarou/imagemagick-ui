@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -14,7 +15,6 @@ namespace ImageMagickUI
         private TextBox    txtLog    = new();
         private TabControl tabs      = new();
 
-        // Palette thème clair
         private static readonly Color BG     = Color.FromArgb(245, 245, 248);
         private static readonly Color SURF   = Color.White;
         private static readonly Color ACCENT = Color.FromArgb(25,  118, 210);
@@ -23,13 +23,13 @@ namespace ImageMagickUI
         private static readonly Color BORDER = Color.FromArgb(200, 200, 210);
         private static readonly Color LOG_BG = Color.FromArgb(250, 250, 252);
         private static readonly Color LOG_FG = Color.FromArgb( 20,  90,  20);
+        private static readonly Color SCAN_ACCENT = Color.FromArgb(80, 50, 20);
 
-        // Colonnes fixes : label de 0→0+LBL_W, contrôle à CTL_X
-        private const int LBL_W = 145;
-        private const int CTL_X = 155;
-        private const int ROW_H =  30;
-        private const int BTN_W = 230;
-        private const int BTN_H =  28;
+        private const int LBL_W  = 155;
+        private const int CTL_X  = 168;
+        private const int ROW_H  =  30;
+        private const int BTN_W  = 240;
+        private const int BTN_H  =  28;
         private const int INDENT =  12;
 
         public MainForm()
@@ -45,7 +45,6 @@ namespace ImageMagickUI
             BuildLayout();
         }
 
-        // ---------------------------------------------------------------- layout
         private void BuildLayout()
         {
             var main = new TableLayoutPanel
@@ -65,15 +64,12 @@ namespace ImageMagickUI
         private Panel BuildIOBar()
         {
             var p = StyledPanel(); p.Dock = DockStyle.Fill;
-
             AddLbl(p, "\ud83d\udcc2 Source :",  8);
             txtInput  = AddTxt(p, 490, 95, 8);
             AddBtn(p, "Parcourir", 595, 6, 105, (_, _) => BrowseOpen(txtInput));
-
             AddLbl(p, "\ud83d\udcbe Sortie  :", 42);
             txtOutput = AddTxt(p, 490, 95, 42);
             AddBtn(p, "Parcourir", 595, 40, 105, (_, _) => BrowseSave(txtOutput));
-
             AddBtn(p, "\u2139 Infos fichier", 8, 74, 140, async (_, _) =>
             {
                 if (!File.Exists(txtInput.Text)) { AppendLog("\u26a0 Fichier source introuvable"); return; }
@@ -94,6 +90,7 @@ namespace ImageMagickUI
             tabs.TabPages.Add(BuildTabColors());
             tabs.TabPages.Add(BuildTabPdf());
             tabs.TabPages.Add(BuildTabAnnotate());
+            tabs.TabPages.Add(BuildTabScan());      // <-- nouvel onglet
             tabs.TabPages.Add(BuildTabBatch());
             return tabs;
         }
@@ -118,11 +115,10 @@ namespace ImageMagickUI
             return p;
         }
 
-        // ---------------------------------------------------------------- onglets
+        // ---------------------------------------------------------------- onglets existants
         private TabPage BuildTabTransform()
         {
             var pg = MakeTab("\ud83d\udd04 Transformations"); var sc = MakeSP(pg); int y = 8;
-
             Sec(sc, "Redimensionner", ref y);
             var nW = Row(sc, "Largeur :", 1920, 1, 99999, ref y, 140);
             var nH = Row(sc, "Hauteur :", 1080, 1, 99999, ref y, 140);
@@ -132,27 +128,22 @@ namespace ImageMagickUI
                 var sz = chRatio.Checked ? $"{(int)nW.Value}x{(int)nH.Value}>" : $"{(int)nW.Value}x{(int)nH.Value}";
                 await Run(txtInput.Text, txtOutput.Text, "-resize", sz);
             });
-
             Sec(sc, "Recadrer (Crop)", ref y);
             var cW = Row(sc, "W :", 800, 1, 99999, ref y); var cH = Row(sc, "H :", 600, 1, 99999, ref y);
             var cX = Row(sc, "X :", 0,   0, 99999, ref y); var cY = Row(sc, "Y :", 0,   0, 99999, ref y);
             BtnRow(sc, "Recadrer", ref y, async () =>
                 await Run(txtInput.Text, txtOutput.Text, "-crop", $"{(int)cW.Value}x{(int)cH.Value}+{(int)cX.Value}+{(int)cY.Value}", "+repage"));
-
             Sec(sc, "Rotation", ref y);
             var ang = RowD(sc, "Angle (\u00b0) :", 0, -360, 360, ref y, 120);
             BtnRow(sc, "Appliquer rotation", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-rotate", ang.Value.ToString("0.##")));
-
             Sec(sc, "Miroirs", ref y);
             BtnRow(sc, "Flip (axe horizontal)", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-flip"));
             BtnRow(sc, "Flop (axe vertical)",   ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-flop"));
             BtnRow(sc, "Transpose",              ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-transpose"));
             BtnRow(sc, "Transverse",             ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-transverse"));
-
             Sec(sc, "Rognage automatique", ref y);
             var fz = RowD(sc, "Fuzz % :", 5, 0, 100, ref y);
             BtnRow(sc, "Rogner (Trim)", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-fuzz", $"{fz.Value}%", "-trim", "+repage"));
-
             Sec(sc, "Bordure", ref y);
             var nb = Row(sc, "\u00c9paisseur :", 10, 0, 500, ref y, 100);
             var bc = RowTxt(sc, "Couleur :", "white", ref y, 120);
@@ -163,19 +154,16 @@ namespace ImageMagickUI
         private TabPage BuildTabEffects()
         {
             var pg = MakeTab("\u2728 Effets visuels"); var sc = MakeSP(pg); int y = 8;
-
             Sec(sc, "Flou (Blur)", ref y);
             var bR = RowD(sc, "Rayon :", 0, 0, 50, ref y); var bS = RowD(sc, "Sigma :", 3, 0, 50, ref y);
             BtnRow(sc, "Blur",          ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-blur",          $"{bR.Value}x{bS.Value}"));
             BtnRow(sc, "Gaussian Blur", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-gaussian-blur", $"{bR.Value}x{bS.Value}"));
             BtnRow(sc, "Motion Blur",   ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-motion-blur",   $"0x{bS.Value}+45"));
-
             Sec(sc, "Net\u02adet\u00e9 (Sharpen)", ref y);
             var shR = RowD(sc, "Rayon :",     0,    0, 50, ref y); var shS = RowD(sc, "Sigma :",     1, 0, 50, ref y);
             var shA = RowD(sc, "Amount :",    0.5m, 0, 10, ref y); var shT = RowD(sc, "Threshold :", 0.1m, 0, 10, ref y);
             BtnRow(sc, "Sharpen",      ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-sharpen", $"{shR.Value}x{shS.Value}"));
             BtnRow(sc, "Unsharp Mask", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-unsharp", $"{shR.Value}x{shS.Value}+{shA.Value}+{shT.Value}"));
-
             Sec(sc, "Bruit (Noise)", ref y);
             var noiseT = new[] { "Uniform","Gaussian","Multiplicative","Impulse","Laplacian","Poisson" };
             var cNoise = RowCmb(sc, "Type :", noiseT, "Multiplicative", ref y, 160);
@@ -184,7 +172,6 @@ namespace ImageMagickUI
             BtnRow(sc, "Despeckle",     ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-despeckle"));
             var nMed = RowD(sc, "Rayon m\u00e9dian :", 1, 0, 20, ref y);
             BtnRow(sc, "M\u00e9dian", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-median", nMed.Value.ToString("0.##")));
-
             Sec(sc, "Effets artistiques", ref y);
             var nCh = RowD(sc, "Rayon charcoal :", 2, 0, 20, ref y);
             BtnRow(sc, "Charcoal",  ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-charcoal", nCh.Value.ToString("0.##")));
@@ -193,50 +180,24 @@ namespace ImageMagickUI
             var skR = RowD(sc, "R sketch :", 0, 0, 50, ref y); var skS = RowD(sc, "S sketch :", 1, 0, 50, ref y); var skA = RowD(sc, "Angle :", 45, 0, 360, ref y);
             BtnRow(sc, "Sketch", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-sketch", $"{skR.Value}x{skS.Value}+{skA.Value}"));
             BtnRow(sc, "Emboss", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-emboss", "0x1"));
-
             Sec(sc, "Distorsions", ref y);
-            var nSw = RowD(sc, "Swirl (\u00b0) :",      90,   -360, 360, ref y);
-            BtnRow(sc, "Swirl",   ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-swirl",   nSw.Value.ToString("0.##")));
-            var nIm = RowD(sc, "Implode :",          0.5m, -5,   5,   ref y);
-            BtnRow(sc, "Implode", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-implode", nIm.Value.ToString("0.##")));
-            var nSp = RowD(sc, "Spread (px) :",      5,    0,    100, ref y);
-            BtnRow(sc, "Spread",  ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-spread",  nSp.Value.ToString("0.##")));
-            var wA = RowD(sc, "Amplitude vague :",   10,   0,    200, ref y);
-            var wL = RowD(sc, "Longueur vague :",    100,  1,    1000, ref y);
-            BtnRow(sc, "Wave",    ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-wave",    $"{wA.Value}x{wL.Value}"));
-            var nPx = RowD(sc, "Pixelate % :",       10,   1,    50,  ref y);
-            BtnRow(sc, "Pixelate",ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-scale",   $"{nPx.Value}%", "-scale", "100%"));
-
-            Sec(sc, "\ud83d\udda8 Effet Imprim\u00e9 / Scann\u00e9", ref y);
-            Note(sc, "Simule l'impression puis le scan d'un document.", ref y);
-            var sDpi  = Row(sc,  "DPI :",          150, 72,  600, ref y);
-            var sRot  = RowD(sc, "Rotation :",     0.3m, -5,  5,  ref y);
-            var sAt1  = RowD(sc, "Bruit 1 :",      0.4m,  0,  2,  ref y);
-            var sAt2  = RowD(sc, "Bruit 2 :",      0.03m, 0,  1,  ref y);
-            var sQual = Row(sc,  "Qualit\u00e9 JPEG :", 80,   1, 100, ref y);
-            var sGray = RowChk(sc, "Niveaux de gris", false, ref y);
-            BtnRow(sc, "\ud83d\udda8 Appliquer effet scan", ref y, async () =>
-            {
-                var a = new System.Collections.Generic.List<string>
-                {
-                    "-density", ((int)sDpi.Value).ToString(), txtInput.Text,
-                    "-rotate",    sRot.Value.ToString("0.##"),
-                    "-attenuate", sAt1.Value.ToString("0.##"), "+noise", "Multiplicative",
-                    "-attenuate", sAt2.Value.ToString("0.##"), "+noise", "Multiplicative",
-                    "-sharpen",   "0x1.0",
-                };
-                if (sGray.Checked) a.AddRange(new[] { "-colorspace", "Gray" });
-                a.AddRange(new[] { "-compress", "JPEG", "-quality", ((int)sQual.Value).ToString() });
-                a.Add(txtOutput.Text);
-                await MagickRunner.RunAsync(a);
-            });
+            var nSw = RowD(sc, "Swirl (\u00b0) :",    90,   -360, 360, ref y);
+            BtnRow(sc, "Swirl",    ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-swirl",   nSw.Value.ToString("0.##")));
+            var nIm = RowD(sc, "Implode :",         0.5m, -5,   5,   ref y);
+            BtnRow(sc, "Implode",  ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-implode", nIm.Value.ToString("0.##")));
+            var nSp = RowD(sc, "Spread (px) :",     5,    0,    100, ref y);
+            BtnRow(sc, "Spread",   ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-spread",  nSp.Value.ToString("0.##")));
+            var wA = RowD(sc, "Amplitude vague :",  10,   0,    200, ref y);
+            var wL = RowD(sc, "Longueur vague :",   100,  1,    1000, ref y);
+            BtnRow(sc, "Wave",     ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-wave",    $"{wA.Value}x{wL.Value}"));
+            var nPx = RowD(sc, "Pixelate % :",      10,   1,    50,  ref y);
+            BtnRow(sc, "Pixelate", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-scale",   $"{nPx.Value}%", "-scale", "100%"));
             return pg;
         }
 
         private TabPage BuildTabColors()
         {
             var pg = MakeTab("\ud83c\udfa8 Couleurs"); var sc = MakeSP(pg); int y = 8;
-
             Sec(sc, "Espace colorim\u00e9trique", ref y);
             var spaces = new[] { "sRGB","Gray","CMYK","HSL","HSB","Lab","XYZ","YCbCr","YUV","LinearGray" };
             var cCs = RowCmb(sc, "Espace :", spaces, "sRGB", ref y, 160);
@@ -247,27 +208,22 @@ namespace ImageMagickUI
             BtnRow(sc, "\u00c9galiser",        ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-equalize"));
             BtnRow(sc, "Auto-Level",      ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-auto-level"));
             BtnRow(sc, "Auto-Gamma",      ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-auto-gamma"));
-
             Sec(sc, "Luminosit\u00e9 / Contraste", ref y);
             var nBr = RowD(sc, "Luminosit\u00e9 :", 0, -100, 100, ref y); var nCo = RowD(sc, "Contraste :", 0, -100, 100, ref y);
             BtnRow(sc, "Appliquer", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-brightness-contrast", $"{nBr.Value}x{nCo.Value}"));
-
             Sec(sc, "Gamma", ref y);
             var nGa = RowD(sc, "Gamma :", 1.0m, 0.1m, 10, ref y);
             BtnRow(sc, "Appliquer gamma", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-gamma", nGa.Value.ToString("0.##")));
-
             Sec(sc, "Niveaux (Levels)", ref y);
             var lvBk = RowD(sc, "Noir % :",  0,    0, 100,  ref y);
             var lvWh = RowD(sc, "Blanc % :", 100,  0, 100,  ref y);
             var lvGa = RowD(sc, "Gamma :",   1.0m, 0.1m, 10, ref y);
             BtnRow(sc, "Appliquer niveaux", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-level", $"{lvBk.Value}%,{lvWh.Value}%,{lvGa.Value}"));
-
             Sec(sc, "Modulation HSB", ref y);
             var mB = RowD(sc, "Luminosit\u00e9 % :", 100, 0, 200, ref y);
             var mS = RowD(sc, "Saturation % :", 100, 0, 200, ref y);
             var mH = RowD(sc, "Teinte % :",     100, 0, 200, ref y);
             BtnRow(sc, "Moduler", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-modulate", $"{mB.Value},{mS.Value},{mH.Value}"));
-
             Sec(sc, "S\u00e9pia / Teinte / Colorisation", ref y);
             var nSep = RowD(sc, "Seuil s\u00e9pia % :", 80, 0, 100, ref y);
             BtnRow(sc, "S\u00e9pia-tone", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-sepia-tone", $"{nSep.Value}%"));
@@ -277,7 +233,6 @@ namespace ImageMagickUI
             var tCol = RowTxt(sc, "Couleur colorize :", "blue", ref y, 100);
             var nCPc = RowD(sc, "% :",                  50, 0, 100, ref y);
             BtnRow(sc, "Colorize", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-fill", tCol.Text, "-colorize", nCPc.Value.ToString("0.##")));
-
             Sec(sc, "Seuillage / Posterize / Dithering", ref y);
             var nThr = RowD(sc, "Seuil % :",         50, 0, 100, ref y);
             BtnRow(sc, "Threshold", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-threshold", $"{nThr.Value}%"));
@@ -285,10 +240,9 @@ namespace ImageMagickUI
             BtnRow(sc, "Posterize", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-posterize", ((int)nPos.Value).ToString()));
             var nDit = Row(sc, "Couleurs dither :",  16, 2, 256, ref y);
             BtnRow(sc, "Dither Riemersma", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-dither", "Riemersma", "-colors", ((int)nDit.Value).ToString()));
-
             Sec(sc, "Extraire canal", ref y);
-            var chs  = new[] { "Red","Green","Blue","Alpha","Cyan","Magenta","Yellow","Black","All" };
-            var cCh  = RowCmb(sc, "Canal :", chs, "Red", ref y, 120);
+            var chs = new[] { "Red","Green","Blue","Alpha","Cyan","Magenta","Yellow","Black","All" };
+            var cCh = RowCmb(sc, "Canal :", chs, "Red", ref y, 120);
             BtnRow(sc, "S\u00e9parer canal", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-channel", cCh.Text, "-separate"));
             return pg;
         }
@@ -296,25 +250,21 @@ namespace ImageMagickUI
         private TabPage BuildTabPdf()
         {
             var pg = MakeTab("\ud83d\udcc4 PDF"); var sc = MakeSP(pg); int y = 8;
-
             Sec(sc, "PDF \u2192 Images", ref y);
             Note(sc, "Sortie exemple : page-%04d.png", ref y);
             var pDpi = Row(sc, "DPI :", 200, 72, 600, ref y);
             BtnRow(sc, "Exporter les pages", ref y, async () =>
                 await MagickRunner.RunAsync(new[] { "-density", ((int)pDpi.Value).ToString(), txtInput.Text, txtOutput.Text }));
-
             Sec(sc, "Extraire une plage de pages", ref y);
             Note(sc, "Syntaxe : 0-2 (pages 1-3)  ou  0,2,4", ref y);
             var tPg = RowTxt(sc, "Pages :", "0-2", ref y, 120);
             BtnRow(sc, "Extraire pages", ref y, async () =>
                 await MagickRunner.RunAsync(new[] { $"{txtInput.Text}[{tPg.Text.Trim()}]", txtOutput.Text }));
-
             Sec(sc, "Compresser PDF", ref y);
-            var cDpi = Row(sc, "DPI :",     150, 72,  600, ref y);
-            var cQl  = Row(sc, "Qualit\u00e9 :",  75,  1,  100, ref y);
+            var cDpi = Row(sc, "DPI :",    150, 72,  600, ref y);
+            var cQl  = Row(sc, "Qualit\u00e9 :", 75,  1,  100, ref y);
             BtnRow(sc, "Compresser PDF", ref y, async () =>
                 await MagickRunner.RunAsync(new[] { "-density", ((int)cDpi.Value).ToString(), txtInput.Text, "-compress", "JPEG", "-quality", ((int)cQl.Value).ToString(), txtOutput.Text }));
-
             Sec(sc, "Images \u2192 PDF (dossier batch)", ref y);
             var tDir = RowTxt(sc, "Dossier :", "", ref y, 350);
             BrowseFolderBtn(sc, tDir, ref y);
@@ -327,22 +277,21 @@ namespace ImageMagickUI
                 if (!imgs.Any()) { AppendLog("\u26a0 Aucune image trouv\u00e9e"); return; }
                 await MagickRunner.RunAsync(imgs.Concat(new[] { txtOutput.Text }));
             });
-
             Sec(sc, "Montage (grille d'images)", ref y);
             var mDir = RowTxt(sc, "Dossier images :", "", ref y, 350);
             BrowseFolderBtn(sc, mDir, ref y);
             var mCol = Row(sc, "Colonnes :",    3,   1, 20,   ref y);
             var mW   = Row(sc, "Larg. tuile :", 200, 50, 2000, ref y);
-            var mH   = Row(sc, "Haut. tuile :", 200, 50, 2000, ref y);
+            var mH2  = Row(sc, "Haut. tuile :", 200, 50, 2000, ref y);
             BtnRow(sc, "Cr\u00e9er montage", ref y, async () =>
             {
                 if (!Directory.Exists(mDir.Text)) { AppendLog("\u26a0 Dossier introuvable"); return; }
                 var imgs = Directory.GetFiles(mDir.Text, "*.*")
                     .Where(f => new[] { ".png",".jpg",".jpeg" }.Contains(Path.GetExtension(f).ToLower()))
                     .OrderBy(f => f).ToArray();
-                var a = new System.Collections.Generic.List<string> { "montage" };
+                var a = new List<string> { "montage" };
                 a.AddRange(imgs);
-                a.AddRange(new[] { "-tile", $"{(int)mCol.Value}x", "-geometry", $"{(int)mW.Value}x{(int)mH.Value}+4+4", txtOutput.Text });
+                a.AddRange(new[] { "-tile", $"{(int)mCol.Value}x", "-geometry", $"{(int)mW.Value}x{(int)mH2.Value}+4+4", txtOutput.Text });
                 await MagickRunner.RunAsync(a);
             });
             return pg;
@@ -351,7 +300,6 @@ namespace ImageMagickUI
         private TabPage BuildTabAnnotate()
         {
             var pg = MakeTab("\u270f\ufe0f Annotations"); var sc = MakeSP(pg); int y = 8;
-
             Sec(sc, "Ins\u00e9rer du texte", ref y);
             var aTxt  = RowTxt(sc, "Texte :",   "Mon texte", ref y, 400);
             var aFnt  = RowTxt(sc, "Police :",  "Arial",     ref y, 150);
@@ -362,7 +310,6 @@ namespace ImageMagickUI
             var aGrv  = RowCmb(sc, "Gravit\u00e9 :", gravs, "NorthWest", ref y, 160);
             BtnRow(sc, "Ins\u00e9rer texte", ref y, async () =>
                 await MagickRunner.RunAsync(new[] { txtInput.Text, "-font", aFnt.Text, "-pointsize", ((int)aSize.Value).ToString(), "-fill", aClr.Text, "-gravity", aGrv.Text, "-annotate", $"+{(int)aX.Value}+{(int)aY.Value}", aTxt.Text, txtOutput.Text }));
-
             Sec(sc, "Filigrane (Watermark)", ref y);
             var wFile = RowTxt(sc, "Fichier WM :", "", ref y, 350);
             BrowseFileBtn(sc, wFile, ref y);
@@ -370,7 +317,6 @@ namespace ImageMagickUI
             var wGrv = RowCmb(sc, "Position :", gravs, "Center", ref y, 160);
             BtnRow(sc, "Appliquer watermark", ref y, async () =>
                 await MagickRunner.RunAsync(new[] { "composite", "-dissolve", wOp.Value.ToString("0.##"), "-gravity", wGrv.Text, wFile.Text, txtInput.Text, txtOutput.Text }));
-
             Sec(sc, "Dessiner un rectangle", ref y);
             var rX1 = Row(sc, "X1 :", 10,  0, 9999, ref y); var rY1 = Row(sc, "Y1 :", 10,  0, 9999, ref y);
             var rX2 = Row(sc, "X2 :", 200, 0, 9999, ref y); var rY2 = Row(sc, "Y2 :", 200, 0, 9999, ref y);
@@ -378,7 +324,6 @@ namespace ImageMagickUI
             var rFll = RowTxt(sc, "Fill :",  "none", ref y, 80);
             BtnRow(sc, "Dessiner rectangle", ref y, async () =>
                 await MagickRunner.RunAsync(new[] { txtInput.Text, "-fill", rFll.Text, "-stroke", rStr.Text, "-draw", $"rectangle {(int)rX1.Value},{(int)rY1.Value} {(int)rX2.Value},{(int)rY2.Value}", txtOutput.Text }));
-
             Sec(sc, "Dessiner un cercle", ref y);
             var cCX = Row(sc, "CX :", 100, 0, 9999, ref y); var cCY = Row(sc, "CY :", 100, 0, 9999, ref y);
             var cRR = Row(sc, "R :",   50, 1, 9999, ref y);
@@ -391,14 +336,221 @@ namespace ImageMagickUI
             return pg;
         }
 
+        // ---------------------------------------------------------------- ONGLET SCAN
+        private TabPage BuildTabScan()
+        {
+            var pg = MakeTab("\ud83d\udda8 Scan / Impression"); var sc = MakeSP(pg); int y = 8;
+
+            // ---- Présets rapides
+            Sec(sc, "Présets rapides", ref y);
+            Note(sc, "Charge les paramètres typiques dans les champs ci-dessous, puis cliquez Appliquer.", ref y);
+
+            // On stocke les références des contrôles pour que les présets puissent les remplir
+            // => on les déclare ici, on les assigne après
+            NumericUpDown? sDpi = null, sQual = null;
+            NumericUpDown? sRot1 = null, sRot2 = null;
+            NumericUpDown? sAt1 = null, sAt2 = null, sAt3 = null;
+            NumericUpDown? sShrpR = null, sShrpS = null;
+            NumericUpDown? sBrightness = null, sContrast = null;
+            NumericUpDown? sGamma = null;
+            CheckBox? sGray = null, sSepia = null, sNorm = null, sDeskew = null, sStrip = null;
+            ComboBox? sNoiseType = null;
+
+            void ApplyPreset(int dpi, decimal rot1, decimal rot2, decimal at1, decimal at2, decimal at3,
+                             decimal shrpR, decimal shrpS, int qual, bool gray, bool sep,
+                             decimal bright, decimal contrast, decimal gamma)
+            {
+                sDpi!.Value       = dpi;
+                sRot1!.Value      = rot1;
+                sRot2!.Value      = rot2;
+                sAt1!.Value       = Math.Min(at1,  sAt1.Maximum);
+                sAt2!.Value       = Math.Min(at2,  sAt2.Maximum);
+                sAt3!.Value       = Math.Min(at3,  sAt3.Maximum);
+                sShrpR!.Value     = shrpR;
+                sShrpS!.Value     = Math.Min(shrpS, sShrpS.Maximum);
+                sQual!.Value      = qual;
+                sGray!.Checked    = gray;
+                sSepia!.Checked   = sep;
+                sBrightness!.Value = bright;
+                sContrast!.Value  = contrast;
+                sGamma!.Value     = gamma;
+            }
+
+            // Boutons présets côte à côte
+            var presetPanel = new FlowLayoutPanel
+            {
+                Location     = new Point(INDENT, y),
+                Size         = new Size(700, 36),
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                BackColor    = BG,
+            };
+            Button PresetBtn(string label) {
+                var b = new Button { Text = label, Width = 160, Height = 30, BackColor = SCAN_ACCENT, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Margin = new Padding(0,0,6,0) };
+                b.FlatAppearance.BorderSize = 0; return b;
+            }
+            var btnLeger  = PresetBtn("\ud83d\uddd2 L\u00e9ger");
+            var btnMoyen  = PresetBtn("\ud83d\uddd2 Moyen");
+            var btnAppuye = PresetBtn("\ud83d\uddd2 Appuy\u00e9");
+            var btnFax    = PresetBtn("\ud83d\udcf1 Fax / N&B");
+            presetPanel.Controls.AddRange(new Control[] { btnLeger, btnMoyen, btnAppuye, btnFax });
+            sc.Controls.Add(presetPanel); y += 44;
+
+            // ---- Résolution
+            Sec(sc, "Résolution d'impression", ref y);
+            Note(sc, "DPI simulé avant le scan. Plus bas = plus dégradé.", ref y);
+            sDpi = Row(sc, "DPI :", 150, 72, 600, ref y, 90);
+
+            // ---- Rotation
+            Sec(sc, "Rotation / D\u00e9salignement", ref y);
+            Note(sc, "Simule un document l\u00e9g\u00e8rement de travers sur le scanner.", ref y);
+            sRot1 = RowD(sc, "Rotation base (\u00b0) :",   0.3m, -5, 5, ref y, 90);
+            sRot2 = RowD(sc, "Variation al\u00e9atoire (\u00b0) :", 0.0m, 0, 3, ref y, 90);
+            Note(sc, "La rotation finale sera : base \u00b1 variation (choisie al\u00e9atoirement).", ref y);
+
+            // ---- Bruit
+            Sec(sc, "Bruit (grain scanner)", ref y);
+            Note(sc, "Couches successives de bruit multiplicatif simulent le capteur CCD.", ref y);
+            var noiseTypes = new[] { "Multiplicative", "Gaussian", "Uniform", "Laplacian" };
+            sNoiseType = RowCmb(sc, "Type de bruit :", noiseTypes, "Multiplicative", ref y, 160);
+            sAt1 = RowD(sc, "Attenuation 1 :",  0.40m, 0, 2, ref y, 90);
+            sAt2 = RowD(sc, "Att\u00e9nuation 2 :",  0.03m, 0, 2, ref y, 90);
+            sAt3 = RowD(sc, "Att\u00e9nuation 3 :",  0.00m, 0, 2, ref y, 90);
+            Note(sc, "Att\u00e9nuation 3 = 0 d\u00e9sactive la 3e couche.", ref y);
+
+            // ---- Nettété
+            Sec(sc, "Nettété (Unsharp Mask)", ref y);
+            Note(sc, "Simule la sur-nettété appliquée par les pilotes de scanner.", ref y);
+            sShrpR = RowD(sc, "Rayon :",  0.0m, 0, 10, ref y, 90);
+            sShrpS = RowD(sc, "Sigma :",  1.0m, 0.1m, 10, ref y, 90);
+
+            // ---- Luminosité / Contraste / Gamma
+            Sec(sc, "Luminosité / Contraste / Gamma", ref y);
+            Note(sc, "Correction post-scan (optionnelle).", ref y);
+            sBrightness = RowD(sc, "Luminosité :",  0,    -100, 100, ref y, 90);
+            sContrast   = RowD(sc, "Contraste :",   0,    -100, 100, ref y, 90);
+            sGamma      = RowD(sc, "Gamma :",       1.0m,  0.1m, 5,  ref y, 90);
+
+            // ---- Options finales
+            Sec(sc, "Options de sortie", ref y);
+            sGray  = RowChk(sc, "Niveaux de gris",           false, ref y);
+            sSepia = RowChk(sc, "Ton sépia (vieux document)", false, ref y);
+            sNorm  = RowChk(sc, "Normaliser après scan",      false, ref y);
+            sDeskew = RowChk(sc, "Deskew auto (-deskew 40%)",  false, ref y);
+            sStrip = RowChk(sc, "Supprimer métadonnées",     true,  ref y);
+            sQual  = Row(sc, "Qualité JPEG :", 80, 1, 100, ref y, 90);
+
+            // Connecter les présets maintenant que les contrôles existent
+            btnLeger.Click  += (_, _) => ApplyPreset(200, 0.1m, 0.1m, 0.15m, 0.01m, 0,    0, 0.5m, 90, false, false,  5, 5, 1.0m);
+            btnMoyen.Click  += (_, _) => ApplyPreset(150, 0.3m, 0.2m, 0.40m, 0.03m, 0,    0, 1.0m, 80, false, false,  0, 0, 1.0m);
+            btnAppuye.Click += (_, _) => ApplyPreset(100, 0.5m, 0.4m, 0.70m, 0.10m, 0.05m,0, 1.5m, 65, false, false, -5, 10, 0.9m);
+            btnFax.Click    += (_, _) => ApplyPreset(100, 0.4m, 0.3m, 0.60m, 0.08m, 0.02m,0, 2.0m, 60, true,  false,  0, 15, 0.85m);
+
+            y += 6;
+
+            // ---- Bouton appliquer fichier unique
+            BtnRow(sc, "\ud83d\udda8 Appliquer sur le fichier source", ref y, async () =>
+                await ApplyScanEffect(
+                    txtInput.Text, txtOutput.Text,
+                    sDpi, sRot1, sRot2, sAt1, sAt2, sAt3, sNoiseType,
+                    sShrpR, sShrpS, sBrightness, sContrast, sGamma,
+                    sQual, sGray, sSepia, sNorm, sDeskew, sStrip));
+
+            // ---- Batch dossier
+            Sec(sc, "Traitement par lot (dossier)", ref y);
+            Note(sc, "Applique les mêmes réglages ci-dessus à toutes les images d'un dossier.", ref y);
+            var bIn  = RowTxt(sc, "Dossier source :", "", ref y, 350); BrowseFolderBtn(sc, bIn,  ref y);
+            var bOut = RowTxt(sc, "Dossier sortie :", "", ref y, 350); BrowseFolderBtn(sc, bOut, ref y);
+            var bExt = RowTxt(sc, "Extension sortie :", ".jpg", ref y, 60);
+            Note(sc, "Ex: .jpg .png .tif  —  laissez vide pour conserver l'extension originale.", ref y);
+
+            BtnRow(sc, "\ud83d\udd04 Lancer le batch scan", ref y, async () =>
+            {
+                if (!Directory.Exists(bIn.Text) || string.IsNullOrWhiteSpace(bOut.Text)) { AppendLog("\u26a0 Vérifiez les dossiers"); return; }
+                Directory.CreateDirectory(bOut.Text);
+                var exts  = new[] { ".png",".jpg",".jpeg",".tif",".tiff",".bmp",".gif",".pdf" };
+                var files = Directory.GetFiles(bIn.Text).Where(f => exts.Contains(Path.GetExtension(f).ToLower())).OrderBy(f => f).ToArray();
+                AppendLog($"\ud83d\udd04 Batch Scan — {files.Length} fichier(s)...");
+                foreach (var f in files)
+                {
+                    var ext = string.IsNullOrWhiteSpace(bExt.Text) ? Path.GetExtension(f) : bExt.Text.Trim();
+                    var dst = Path.Combine(bOut.Text, Path.GetFileNameWithoutExtension(f) + ext);
+                    await ApplyScanEffect(
+                        f, dst,
+                        sDpi, sRot1, sRot2, sAt1, sAt2, sAt3, sNoiseType,
+                        sShrpR, sShrpS, sBrightness, sContrast, sGamma,
+                        sQual, sGray, sSepia, sNorm, sDeskew, sStrip);
+                }
+                AppendLog("\u2705 Batch Scan terminé.");
+            });
+
+            return pg;
+        }
+
+        // ---- Logique scan centralisée
+        private async Task ApplyScanEffect(
+            string src, string dst,
+            NumericUpDown sDpi, NumericUpDown sRot1, NumericUpDown sRot2,
+            NumericUpDown sAt1, NumericUpDown sAt2, NumericUpDown sAt3,
+            ComboBox sNoiseType,
+            NumericUpDown sShrpR, NumericUpDown sShrpS,
+            NumericUpDown sBrightness, NumericUpDown sContrast,
+            NumericUpDown sGamma, NumericUpDown sQual,
+            CheckBox sGray, CheckBox sSepia, CheckBox sNorm, CheckBox sDeskew, CheckBox sStrip)
+        {
+            if (!File.Exists(src)) { AppendLog($"\u26a0 Fichier introuvable : {src}"); return; }
+            if (string.IsNullOrWhiteSpace(dst)) { AppendLog("\u26a0 Définissez le fichier de sortie"); return; }
+
+            // Rotation avec variation aléatoire
+            var rng     = new Random();
+            double variation = (double)sRot2.Value * (rng.NextDouble() * 2 - 1);
+            double finalRot  = (double)sRot1.Value + variation;
+
+            var a = new List<string> { "-density", ((int)sDpi.Value).ToString(), src };
+
+            if (finalRot != 0)
+                a.AddRange(new[] { "-rotate", finalRot.ToString("0.##") });
+
+            // Couches de bruit
+            string noise = sNoiseType.Text;
+            if (sAt1.Value > 0) a.AddRange(new[] { "-attenuate", sAt1.Value.ToString("0.##"), "+noise", noise });
+            if (sAt2.Value > 0) a.AddRange(new[] { "-attenuate", sAt2.Value.ToString("0.##"), "+noise", noise });
+            if (sAt3.Value > 0) a.AddRange(new[] { "-attenuate", sAt3.Value.ToString("0.##"), "+noise", noise });
+
+            // Nettété
+            if (sShrpS.Value > 0)
+                a.AddRange(new[] { "-unsharp", $"{sShrpR.Value:0.##}x{sShrpS.Value:0.##}+0.5+0.05" });
+
+            // Luminosité / Contraste
+            if (sBrightness.Value != 0 || sContrast.Value != 0)
+                a.AddRange(new[] { "-brightness-contrast", $"{sBrightness.Value:0.##}x{sContrast.Value:0.##}" });
+
+            // Gamma
+            if (sGamma.Value != 1.0m)
+                a.AddRange(new[] { "-gamma", sGamma.Value.ToString("0.##") });
+
+            // Colorimétrie
+            if (sGray.Checked)  a.AddRange(new[] { "-colorspace", "Gray" });
+            if (sSepia.Checked) a.AddRange(new[] { "-sepia-tone", "80%" });
+            if (sNorm.Checked)  a.Add("-normalize");
+            if (sDeskew.Checked) a.AddRange(new[] { "-deskew", "40%" });
+            if (sStrip.Checked) a.Add("-strip");
+
+            // Qualité de sortie
+            a.AddRange(new[] { "-compress", "JPEG", "-quality", ((int)sQual.Value).ToString() });
+            a.Add(dst);
+
+            await MagickRunner.RunAsync(a);
+        }
+
+        // ---------------------------------------------------------------- Batch onglet
         private TabPage BuildTabBatch()
         {
             var pg = MakeTab("\ud83d\udce6 Batch & Format"); var sc = MakeSP(pg); int y = 8;
-
             Sec(sc, "Traitement par lot", ref y);
             var bIn  = RowTxt(sc, "Dossier source :", "", ref y, 350); BrowseFolderBtn(sc, bIn,  ref y);
             var bOut = RowTxt(sc, "Dossier sortie :", "", ref y, 350); BrowseFolderBtn(sc, bOut, ref y);
-            var bOps = new[] { "Grayscale","Resize 50%","Resize 150%","Normalize","Scan Effect","JPEG q85","Auto-level","Auto-gamma" };
+            var bOps = new[] { "Grayscale","Resize 50%","Resize 150%","Normalize","JPEG q85","Auto-level","Auto-gamma" };
             var bOp  = RowCmb(sc, "Op\u00e9ration :", bOps, "Grayscale", ref y, 200);
             BtnRow(sc, "\ud83d\udd04 Lancer le batch", ref y, async () =>
             {
@@ -419,19 +571,16 @@ namespace ImageMagickUI
                         "JPEG q85"    => new[] { f, "-quality", "85", dst },
                         "Auto-level"  => new[] { f, "-auto-level", dst },
                         "Auto-gamma"  => new[] { f, "-auto-gamma", dst },
-                        "Scan Effect" => new[] { "-density","150", f, "-rotate","0.3", "-attenuate","0.4","+noise","Multiplicative","-sharpen","0x1.0","-compress","JPEG","-quality","80", dst },
                         _             => new[] { f, dst }
                     };
                     await MagickRunner.RunAsync(args);
                 }
                 AppendLog("\u2705 Batch termin\u00e9.");
             });
-
             Sec(sc, "Conversion de format", ref y);
             Note(sc, "Changez l'extension dans le chemin de sortie pour changer le format.", ref y);
             var cQl = Row(sc, "Qualit\u00e9 (JPEG/WebP) :", 85, 1, 100, ref y);
             BtnRow(sc, "Convertir", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-quality", ((int)cQl.Value).ToString()));
-
             Sec(sc, "M\u00e9tadonn\u00e9es", ref y);
             BtnRow(sc, "Supprimer m\u00e9tadonn\u00e9es (-strip)", ref y, async () => await Run(txtInput.Text, txtOutput.Text, "-strip"));
             BtnRow(sc, "\u2139 Afficher infos (identify)", ref y, async () =>
@@ -447,7 +596,7 @@ namespace ImageMagickUI
         {
             if (!File.Exists(src)) { AppendLog("\u26a0 Fichier source introuvable"); return; }
             if (string.IsNullOrWhiteSpace(dst)) { AppendLog("\u26a0 D\u00e9finissez le fichier de sortie"); return; }
-            var a = new System.Collections.Generic.List<string> { src };
+            var a = new List<string> { src };
             a.AddRange(middle); a.Add(dst);
             await MagickRunner.RunAsync(a);
         }
@@ -468,8 +617,6 @@ namespace ImageMagickUI
             var s = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = BG };
             tp.Controls.Add(s); return s;
         }
-
-        // Label simple (pour IOBar)
         private void AddLbl(Panel p, string text, int y)
         {
             var l = new Label { Text = text, ForeColor = FG, AutoSize = true, Location = new Point(8, y + 4) };
@@ -489,8 +636,6 @@ namespace ImageMagickUI
             var b = new Button { Text = label, Width = w, Height = BTN_H, BackColor = ACCENT, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand };
             b.FlatAppearance.BorderSize = 0; return b;
         }
-
-        // Section header
         private void Sec(Panel sc, string title, ref int y)
         {
             y += 4;
@@ -504,32 +649,24 @@ namespace ImageMagickUI
             var l = new Label { Text = text, ForeColor = Color.FromArgb(100, 100, 120), AutoSize = true, Font = new Font("Segoe UI", 8.5f, FontStyle.Italic), Location = new Point(INDENT + 4, y) };
             sc.Controls.Add(l); y += 20;
         }
-
-        // ---- Ligne label (fixe LBL_W) + NumericUpDown int
         private NumericUpDown Row(Panel sc, string label, int def, int min, int max, ref int y, int w = 90)
         {
             var lbl = new Label { Text = label, ForeColor = FG, Size = new Size(LBL_W, 20), TextAlign = ContentAlignment.MiddleRight, Location = new Point(INDENT, y + 2) };
             var nud = new NumericUpDown { Minimum = min, Maximum = max, Value = def, Width = w, Location = new Point(CTL_X, y), BackColor = SURF, ForeColor = FG, BorderStyle = BorderStyle.FixedSingle };
             sc.Controls.AddRange(new Control[] { lbl, nud }); y += ROW_H; return nud;
         }
-
-        // ---- Ligne label + NumericUpDown decimal
         private NumericUpDown RowD(Panel sc, string label, decimal def, decimal min, decimal max, ref int y, int w = 90)
         {
             var lbl = new Label { Text = label, ForeColor = FG, Size = new Size(LBL_W, 20), TextAlign = ContentAlignment.MiddleRight, Location = new Point(INDENT, y + 2) };
-            var nud = new NumericUpDown { Minimum = min, Maximum = max, Value = def, DecimalPlaces = 2, Increment = 0.1m, Width = w, Location = new Point(CTL_X, y), BackColor = SURF, ForeColor = FG, BorderStyle = BorderStyle.FixedSingle };
+            var nud = new NumericUpDown { Minimum = min, Maximum = max, Value = def, DecimalPlaces = 2, Increment = 0.05m, Width = w, Location = new Point(CTL_X, y), BackColor = SURF, ForeColor = FG, BorderStyle = BorderStyle.FixedSingle };
             sc.Controls.AddRange(new Control[] { lbl, nud }); y += ROW_H; return nud;
         }
-
-        // ---- Ligne label + TextBox
         private TextBox RowTxt(Panel sc, string label, string def, ref int y, int width = 200)
         {
             var lbl = new Label { Text = label, ForeColor = FG, Size = new Size(LBL_W, 20), TextAlign = ContentAlignment.MiddleRight, Location = new Point(INDENT, y + 2) };
             var txt = new TextBox { Text = def, Width = width, Location = new Point(CTL_X, y), BackColor = SURF, ForeColor = FG, BorderStyle = BorderStyle.FixedSingle };
             sc.Controls.AddRange(new Control[] { lbl, txt }); y += ROW_H; return txt;
         }
-
-        // ---- Ligne label + ComboBox
         private ComboBox RowCmb(Panel sc, string label, string[] items, string def, ref int y, int width = 160)
         {
             var lbl = new Label { Text = label, ForeColor = FG, Size = new Size(LBL_W, 20), TextAlign = ContentAlignment.MiddleRight, Location = new Point(INDENT, y + 2) };
@@ -537,15 +674,11 @@ namespace ImageMagickUI
             cmb.Items.AddRange(items); cmb.SelectedItem = def;
             sc.Controls.AddRange(new Control[] { lbl, cmb }); y += ROW_H; return cmb;
         }
-
-        // ---- Ligne CheckBox seule
         private CheckBox RowChk(Panel sc, string label, bool def, ref int y)
         {
             var chk = new CheckBox { Text = label, Checked = def, ForeColor = FG, Location = new Point(CTL_X, y), AutoSize = true };
             sc.Controls.Add(chk); y += ROW_H - 2; return chk;
         }
-
-        // ---- Bouton action pleine largeur
         private void BtnRow(Panel sc, string label, ref int y, Func<Task> action)
         {
             var b = MakeBtn(label);
@@ -553,11 +686,8 @@ namespace ImageMagickUI
             b.Click += async (_, _) => await action();
             sc.Controls.Add(b); y += BTN_H + 10;
         }
-
-        // ---- Boutons browse
         private Button MakeSecBtn(string label) =>
             new Button { Text = label, Width = 130, Height = 26, BackColor = Color.FromArgb(70, 130, 180), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand };
-
         private void BrowseFileBtn(Panel sc, TextBox target, ref int y)
         {
             var b = MakeSecBtn("\ud83d\udcc2 Parcourir..."); b.FlatAppearance.BorderSize = 0;
@@ -572,7 +702,6 @@ namespace ImageMagickUI
             b.Click += (_, _) => { using var d = new FolderBrowserDialog(); if (d.ShowDialog() == DialogResult.OK) target.Text = d.SelectedPath; };
             sc.Controls.Add(b); y += 32;
         }
-
         private void BrowseOpen(TextBox t) { using var d = new OpenFileDialog { Filter = AllFilesFilter() }; if (d.ShowDialog() == DialogResult.OK) t.Text = d.FileName; }
         private void BrowseSave(TextBox t) { using var d = new SaveFileDialog { Filter = AllFilesFilter() }; if (d.ShowDialog() == DialogResult.OK) t.Text = d.FileName; }
         private static string AllFilesFilter() => "Tous les fichiers|*.*|Images|*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp;*.gif;*.webp|PDF|*.pdf";
