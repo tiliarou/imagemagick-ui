@@ -48,6 +48,8 @@ jobs:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Download artifact
@@ -59,6 +61,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ImageMagickUI.exe
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
